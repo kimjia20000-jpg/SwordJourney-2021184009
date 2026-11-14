@@ -11,12 +11,9 @@ from pico2d import (
     SDLK_ESCAPE,
 )
 
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from player import Player
 from stage import Stage
-
-
-CANVAS_WIDTH = 800
-CANVAS_HEIGHT = 600
 
 
 def handle_events(player):
@@ -39,8 +36,6 @@ def handle_events(player):
 
 
 def update(player, frame_time):
-    # 물리 계산을 작은 시간 단위로 나눠
-    # 발판 착지 판정을 자주 확인한다.
     remaining_time = frame_time
     max_step = 1.0 / 120.0
 
@@ -53,7 +48,6 @@ def update(player, frame_time):
 def draw(stage, player):
     clear_canvas()
 
-    # 지형 다음에 캐릭터를 그린다.
     stage.draw()
     player.draw()
 
@@ -61,7 +55,7 @@ def draw(stage, player):
 
 
 def main():
-    open_canvas(CANVAS_WIDTH, CANVAS_HEIGHT)
+    open_canvas(SCREEN_WIDTH, SCREEN_HEIGHT)
 
     try:
         stage = Stage()
@@ -74,7 +68,6 @@ def main():
             frame_time = current_time - previous_time
             previous_time = current_time
 
-            # 디버거 정지나 창 이동 뒤의 큰 시간 차를 제한.
             frame_time = max(0.0, min(frame_time, 0.1))
 
             if not handle_events(player):

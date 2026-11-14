@@ -11,17 +11,20 @@ from pico2d import (
     SDLK_a,
 )
 
+from settings import (
+    PLAYER_DRAW_SCALE,
+    PLAYER_FOOT_HALF_WIDTH,
+    MOVE_SPEED,
+    JUMP_SPEED,
+    GRAVITY,
+    IDLE_FPS,
+    RUN_FPS,
+    ATTACK_DURATION,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
-
-# 이동과 점프 설정.
-MOVE_SPEED = 200.0
-JUMP_SPEED = 550.0
-GRAVITY = 1400.0
-
-# 모든 프레임에 같은 배율 적용.
-DRAW_SCALE = 160.0 / 311.0
 
 # 원본 이미지의 왼쪽 위 기준 좌표.
 # (left, top, right, bottom)
@@ -46,12 +49,6 @@ ATTACK_FRAMES = (
     (1172, 741, 1393, 1050),
 )
 
-IDLE_FPS = 4.0
-RUN_FPS = 10.0
-
-# 첫 번째 검의 임시 공격 시간.
-ATTACK_DURATION = 0.48
-
 
 class Player:
     def __init__(self, stage):
@@ -65,12 +62,11 @@ class Player:
                 "1448x1086 크기의 원본 포즈 시트를 사용해야 합니다."
             )
 
-        # x: 캐릭터 중심, y: 발 기준 높이.
+        # x는 캐릭터 중심, y는 발 기준 높이.
         self.x = self.stage.spawn_x
         self.y = self.stage.spawn_y
 
-        # 착지 판정은 검을 제외한 발 주변 영역으로 처리.
-        self.foot_half_width = 14.0
+        self.foot_half_width = PLAYER_FOOT_HALF_WIDTH
 
         # 입력 상태.
         self.left_pressed = False
@@ -85,16 +81,16 @@ class Player:
         self.velocity_y = 0.0
         self.on_ground = True
 
-        # 이동 애니메이션 상태.
+        # 이동 애니메이션.
         self.motion = "IDLE"
         self.frame = 0.0
 
-        # 이동과 별도로 관리하는 공격 상태.
+        # 공격 상태.
         self.attacking = False
         self.attack_elapsed = 0.0
         self.attack_direction = 1
 
-        # 이미지 전체가 화면 안에 들어오도록 경계 여백 계산.
+        # 공격 이미지까지 화면 안에 들어오도록 경계 여백 계산.
         all_frames = IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
 
         max_width = max(
@@ -102,7 +98,7 @@ class Player:
             for left, top, right, bottom in all_frames
         )
 
-        self.half_width = max_width * DRAW_SCALE / 2
+        self.half_width = max_width * PLAYER_DRAW_SCALE / 2
 
     def handle_event(self, event):
         if event.type == SDL_KEYDOWN:
@@ -113,7 +109,6 @@ class Player:
                 self.right_pressed = True
 
             elif event.key == SDLK_SPACE:
-                # 키를 길게 눌러도 자동 재점프하지 않게 처리.
                 if not self.jump_pressed:
                     self.jump_pressed = True
 
@@ -122,7 +117,6 @@ class Player:
                         self.on_ground = False
 
             elif event.key == SDLK_a:
-                # 반복 KEYDOWN으로 현재 공격을 초기화하지 않는다.
                 if not self.attack_pressed:
                     self.attack_pressed = True
 
@@ -140,7 +134,6 @@ class Player:
                 self.jump_pressed = False
 
             elif event.key == SDLK_a:
-                # 현재 공격은 마무리하고 연속 공격만 중단.
                 self.attack_pressed = False
 
     def start_attack(self):
@@ -156,7 +149,6 @@ class Player:
         self.attack_direction = self.face_direction
 
     def update(self, frame_time):
-        # 공격 중에도 이동과 중력 계산을 계속한다.
         self.update_movement(frame_time)
         self.update_motion_animation(frame_time)
         self.update_attack(frame_time)
@@ -180,12 +172,9 @@ class Player:
             )
         )
 
-        # 2. 중력 적용 전 발 높이 저장.
+        # 2. 중력 적용 전 발 높이.
         old_y = self.y
 
-        # 발판 위에서도 계산한다.
-        # 착지 처리로 발판 위에 유지하고,
-        # 가장자리로 나가면 자연스럽게 떨어지게 한다.
         self.y += (
             self.velocity_y * frame_time
             - 0.5 * GRAVITY * frame_time ** 2
@@ -194,7 +183,7 @@ class Player:
 
         self.on_ground = False
 
-        # 3. 하강 중에만 발판 윗면과 충돌.
+        # 3. 하강 중 발판 착지.
         if self.velocity_y <= 0:
             landing = self.stage.find_landing(
                 self.x,
@@ -208,8 +197,7 @@ class Player:
                 self.velocity_y = 0.0
                 self.on_ground = True
 
-        # 4. 공중 공격 중에는 방향키로 즉시 공격 방향 변경.
-        # 공격 진행 시간과 점프 속도는 유지한다.
+        # 4. 공중 공격 중 즉시 방향 전환.
         if (
             self.attacking
             and not self.on_ground
@@ -242,7 +230,7 @@ class Player:
             ) % len(RUN_FRAMES)
 
         else:
-            # 점프 전용 이미지가 없어 임시 공중 자세 사용.
+            # 점프 전용 이미지 제작 전까지 사용할 임시 자세.
             self.frame = 1.0
 
     def update_attack(self, frame_time):
@@ -253,9 +241,8 @@ class Player:
                 self.attacking = False
                 self.attack_elapsed = 0.0
 
-                # 이후 공격 종료 시 무기 교체 예약을 처리할 위치.
+                # 이후 무기 교체 예약을 처리할 위치.
 
-        # A를 계속 누르고 있다면 다음 공격 시작.
         if not self.attacking and self.attack_pressed:
             self.start_attack()
 
@@ -287,14 +274,12 @@ class Player:
 
         source_width = right - left
         source_height = bottom - top
-
-        # 위쪽 기준 좌표를 pico2d의 아래쪽 기준으로 변환.
         source_bottom = self.image.h - bottom
 
-        draw_width = source_width * DRAW_SCALE
-        draw_height = source_height * DRAW_SCALE
+        draw_width = source_width * PLAYER_DRAW_SCALE
+        draw_height = source_height * PLAYER_DRAW_SCALE
 
-        # 프레임 높이가 달라도 아래쪽을 발 높이에 맞춘다.
+        # 아래쪽을 발 기준 높이에 맞춘다.
         draw_y = self.y + draw_height / 2
 
         if direction == 1:

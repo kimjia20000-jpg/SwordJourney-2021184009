@@ -1,16 +1,28 @@
 from pico2d import draw_rectangle
 
+from settings import (
+    SCREEN_WIDTH,
+    GROUND_Y,
+    PLATFORM_THICKNESS,
+)
+
 
 class Platform:
-    def __init__(self, left, right, top, thickness=16):
+    def __init__(
+        self,
+        left,
+        right,
+        top,
+        thickness=PLATFORM_THICKNESS
+    ):
         self.left = left
         self.right = right
         self.top = top
         self.thickness = thickness
 
     def draw(self):
-        # 착지와 이동을 확인하기 위한 임시 발판.
-        # 추후 같은 위치에 풀과 흙 이미지를 적용한다.
+        # 지형 확인용 임시 사각형.
+        # 나중에 같은 영역에 풀과 흙 이미지를 그린다.
         draw_rectangle(
             self.left,
             self.top - self.thickness,
@@ -21,30 +33,35 @@ class Platform:
 
 class Stage:
     def __init__(self):
-        self.spawn_x = 100.0
-        self.spawn_y = 80.0
+        self.spawn_x = 120.0
+        self.spawn_y = GROUND_Y
 
         self.platforms = [
             # 전체 바닥.
-            Platform(0, 800, 80, 24),
+            Platform(
+                0,
+                SCREEN_WIDTH - 1,
+                GROUND_Y,
+                28
+            ),
 
-            # 1층: 좌우 발판.
-            Platform(60, 270, 150),
-            Platform(530, 740, 150),
+            # 1층: 좌우 전투 발판.
+            Platform(100, 380, 165),
+            Platform(900, 1180, 165),
 
-            # 2층: 중앙 발판.
-            Platform(230, 570, 220),
+            # 2층: 넓은 중앙 발판.
+            Platform(300, 980, 250),
 
-            # 3층: 좌우 연결 발판.
-            Platform(120, 300, 290),
-            Platform(500, 680, 290),
+            # 3층: 좌우 발판.
+            Platform(160, 490, 335),
+            Platform(790, 1120, 335),
 
             # 4층: 상단 중앙 발판.
-            Platform(280, 520, 360),
+            Platform(450, 830, 420),
         ]
 
     def find_landing(self, x, half_width, old_y, new_y):
-        """하강 중 발이 통과한 발판 중 가장 높은 발판을 반환한다."""
+        """하강 중 발이 통과한 발판 중 가장 높은 발판을 찾는다."""
         landing = None
 
         for platform in self.platforms:
