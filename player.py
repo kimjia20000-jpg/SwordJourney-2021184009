@@ -13,27 +13,52 @@ from pico2d import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_preview.png"
+IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
 
-# 조작감을 확인하면서 조정할 임시 수치.
-MOVE_SPEED = 200.0          # 픽셀/초
-JUMP_SPEED = 550.0          # 점프 시작 시 위쪽 속도
-GRAVITY = 1400.0           # 픽셀/초²
-GROUND_Y = 80              # 바닥 높이
+MOVE_SPEED = 200.0
+JUMP_SPEED = 550.0
+GRAVITY = 1400.0
+GROUND_Y = 80
+
+# 모든 동작에 같은 배율을 적용한다.
+DRAW_SCALE = 160.0 / 311.0
+
+# 원본 이미지의 왼쪽 위를 기준으로 한 프레임 영역.
+# (left, top, right, bottom)
+# 각 캐릭터 주변의 빈 공간을 제외한 좌표다.
+IDLE_FRAMES = (
+    (103, 13, 313, 324),
+    (456, 13, 667, 324),
+    (809, 14, 1020, 324),
+    (1163, 18, 1375, 325),
+)
+
+RUN_FRAMES = (
+    (89, 379, 316, 678),
+    (467, 379, 664, 686),
+    (791, 379, 1031, 686),
+    (1178, 382, 1381, 687),
+)
+
+# 초당 애니메이션 프레임 진행 수.
+IDLE_FPS = 4.0
+RUN_FPS = 10.0
 
 
 class Player:
     def __init__(self):
         self.image = load_image(str(IMAGE_PATH))
 
-        self.draw_height = 160
-        self.draw_width = round(
-            self.image.w * self.draw_height / self.image.h
-        )
+        if (self.image.w, self.image.h) != (1448, 1086):
+            raise ValueError(
+                "player_actions.png는 "
+                "1448x1086 크기의 원본 포즈 시트를 사용해야 합니다."
+            )
 
-        # 위치는 이미지의 중심 좌표.
         self.x = 400.0
-        self.y = GROUND_Y + self.draw_height / 2
+
+        # 이번 단계부터 y는 이미지 중심이 아니라 발 기준 높이.
+        self.y = float(GROUND_Y)
 
         self.left_pressed = False
         self.right_pressed = False
@@ -42,9 +67,20 @@ class Player:
         self.direction = 0
         self.face_direction = 1
 
-        # 위쪽이 양수, 아래쪽이 음수.
         self.velocity_y = 0.0
         self.on_ground = True
+
+        # 이동 상태와 애니메이션 진행 위치.
+        self.motion = "IDLE"
+        self.frame = 0.0
+
+        # 모든 현재 프레임이 화면 안에 들어오도록 여백 계산.
+        all_frames = IDLE_FRAMES + RUN_FRAMES
+        max_width = max(
+            right - left
+            for left, top, right, bottom in all_frames
+        )
+        self.half_width = max_width * DRAW_SCALE / 2
 
     def handle_event(self, event):
         if event.type == SDL_KEYDOWN:
@@ -55,12 +91,9 @@ class Player:
                 self.right_pressed = True
 
             elif event.key == SDLK_SPACE:
-                # 길게 누를 때 발생하는 반복 입력으로
-                # 점프가 다시 실행되지 않게 한다.
                 if not self.jump_pressed:
                     self.jump_pressed = True
 
-                    # 바닥에 있을 때만 점프 시작.
                     if self.on_ground:
                         self.velocity_y = JUMP_SPEED
                         self.on_ground = False
@@ -76,7 +109,7 @@ class Player:
                 self.jump_pressed = False
 
     def update(self, frame_time):
-        # 1. 지상과 공중 모두 같은 방식으로 좌우 이동.
+        # 1. 좌우 이동.
         self.direction = (
             int(self.right_pressed) - int(self.left_pressed)
         )
@@ -86,14 +119,15 @@ class Player:
 
         self.x += self.direction * MOVE_SPEED * frame_time
 
-        # 2. 좌우 화면 경계 제한.
-        half_width = self.draw_width / 2
         self.x = max(
-            half_width,
-            min(get_canvas_width() - half_width, self.x)
+            self.half_width,
+            min(
+                get_canvas_width() - self.half_width,
+                self.x
+            )
         )
 
-        # 3. 공중에서는 중력에 따라 위치와 수직 속도 변경.
+        # 2. 점프와 착지.
         if not self.on_ground:
             self.y += (
                 self.velocity_y * frame_time
@@ -101,35 +135,79 @@ class Player:
             )
             self.velocity_y -= GRAVITY * frame_time
 
-            # 4. 이미지 아래쪽이 바닥에 닿으면 착지.
-            ground_center_y = GROUND_Y + self.draw_height / 2
-
-            if self.y <= ground_center_y:
-                self.y = ground_center_y
+            if self.y <= GROUND_Y:
+                self.y = float(GROUND_Y)
                 self.velocity_y = 0.0
                 self.on_ground = True
 
+        # 3. 이동 상태 결정.
+        if not self.on_ground:
+            next_motion = "AIR"
+        elif self.direction != 0:
+            next_motion = "RUN"
+        else:
+            next_motion = "IDLE"
+
+        # 상태가 바뀔 때만 애니메이션을 처음부터 시작.
+        if next_motion != self.motion:
+            self.motion = next_motion
+            self.frame = 0.0
+
+        # 4. 실제 경과 시간에 따라 애니메이션 진행.
+        if self.motion == "IDLE":
+            self.frame = (
+                self.frame + IDLE_FPS * frame_time
+            ) % len(IDLE_FRAMES)
+
+        elif self.motion == "RUN":
+            self.frame = (
+                self.frame + RUN_FPS * frame_time
+            ) % len(RUN_FRAMES)
+
+        else:
+            # 점프 전용 이미지가 없으므로
+            # 공중에서는 달리기 시트의 한 자세를 임시 사용.
+            self.frame = 1.0
+
     def draw(self):
-        # 이번 단계의 착지 확인용 바닥선.
-        # 배경 객체를 만들 때 별도 파일로 옮길 예정.
         draw_rectangle(
             0, GROUND_Y - 2,
             get_canvas_width() - 1, GROUND_Y
         )
 
+        if self.motion == "IDLE":
+            frames = IDLE_FRAMES
+        else:
+            frames = RUN_FRAMES
+
+        left, top, right, bottom = frames[int(self.frame)]
+
+        source_width = right - left
+        source_height = bottom - top
+
+        # 이미지 좌표의 위쪽 기준을
+        # pico2d의 아래쪽 기준으로 변환.
+        source_bottom = self.image.h - bottom
+
+        draw_width = source_width * DRAW_SCALE
+        draw_height = source_height * DRAW_SCALE
+
+        # 프레임 높이가 달라도 아래쪽을 발 기준 높이에 맞춘다.
+        draw_y = self.y + draw_height / 2
+
         if self.face_direction == 1:
-            self.image.draw(
-                self.x,
-                self.y,
-                self.draw_width,
-                self.draw_height
+            self.image.clip_draw(
+                left, source_bottom,
+                source_width, source_height,
+                self.x, draw_y,
+                draw_width, draw_height
             )
 
         else:
             self.image.clip_composite_draw(
-                0, 0,
-                self.image.w, self.image.h,
+                left, source_bottom,
+                source_width, source_height,
                 0, 'h',
-                self.x, self.y,
-                self.draw_width, self.draw_height
+                self.x, draw_y,
+                draw_width, draw_height
             )
