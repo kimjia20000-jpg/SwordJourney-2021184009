@@ -45,6 +45,13 @@ def update(stage, player, frame_time):
         stage.update(step)
         player.update(step)
 
+        # 공격 판정 순회가 끝난 뒤 처치된 슬라임을 제거한다.
+        stage.slimes[:] = [
+            slime
+            for slime in stage.slimes
+            if slime.alive
+        ]
+
         remaining_time -= step
 
 
@@ -53,6 +60,11 @@ def draw(stage, player):
 
     stage.draw()
     player.draw()
+
+    # 체력바는 가장 나중에 그린다.
+    # 슬라임의 피격 깜빡임과 관계없이 계속 표시한다.
+    for slime in stage.slimes:
+        slime.draw_health_bar()
 
     update_canvas()
 
@@ -71,7 +83,10 @@ def main():
             frame_time = current_time - previous_time
             previous_time = current_time
 
-            frame_time = max(0.0, min(frame_time, 0.1))
+            frame_time = max(
+                0.0,
+                min(frame_time, 0.1)
+            )
 
             if not handle_events(player):
                 break

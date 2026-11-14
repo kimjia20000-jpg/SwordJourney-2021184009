@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
 
 # 원본 이미지의 왼쪽 위 기준 좌표.
-# (left, top, right, bottom)
+# (왼쪽, 위쪽, 오른쪽, 아래쪽)
 IDLE_FRAMES = (
     (103, 13, 313, 324),
     (456, 13, 667, 324),
@@ -49,23 +49,33 @@ ATTACK_FRAMES = (
     (1172, 741, 1393, 1050),
 )
 
+BASIC_ATTACK_DAMAGE = 10
+
+
+def rectangles_overlap(a, b):
+    """두 사각형이 겹치는지 확인한다."""
+    return (
+        a[0] < b[2]
+        and a[2] > b[0]
+        and a[1] < b[3]
+        and a[3] > b[1]
+    )
+
 
 class Player:
     def __init__(self, stage):
         self.stage = stage
-
         self.image = load_image(str(IMAGE_PATH))
 
         if (self.image.w, self.image.h) != (1448, 1086):
             raise ValueError(
                 "player_actions.png는 "
-                "1448x1086 크기의 원본 포즈 시트를 사용해야 합니다."
+                "1448x1086 크기의 원본 이미지를 사용해야 합니다."
             )
 
         # x는 캐릭터 중심, y는 발 기준 높이.
         self.x = self.stage.spawn_x
         self.y = self.stage.spawn_y
-
         self.foot_half_width = PLAYER_FOOT_HALF_WIDTH
 
         # 입력 상태.
@@ -81,7 +91,7 @@ class Player:
         self.velocity_y = 0.0
         self.on_ground = True
 
-        # 이동 애니메이션.
+        # 이동 애니메이션 상태.
         self.motion = "IDLE"
         self.frame = 0.0
 
@@ -90,7 +100,9 @@ class Player:
         self.attack_elapsed = 0.0
         self.attack_direction = 1
 
-        # 공격 이미지까지 화면 안에 들어오도록 경계 여백 계산.
+        # 이번 공격에서 이미 맞힌 슬라임을 기록한다.
+        self.hit_targets = set()
+
         all_frames = IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
 
         max_width = max(
@@ -148,17 +160,20 @@ class Player:
         self.attack_elapsed = 0.0
         self.attack_direction = self.face_direction
 
+        # 새로운 공격이므로 같은 슬라임을 다시 맞힐 수 있다.
+        self.hit_targets.clear()
+
     def update(self, frame_time):
         self.update_movement(frame_time)
         self.update_motion_animation(frame_time)
         self.update_attack(frame_time)
+        self.check_attack_hits()
 
     def update_movement(self, frame_time):
         self.direction = (
             int(self.right_pressed) - int(self.left_pressed)
         )
 
-        # 1. 좌우 이동.
         if self.direction != 0:
             self.face_direction = self.direction
 
@@ -172,7 +187,6 @@ class Player:
             )
         )
 
-        # 2. 중력 적용 전 발 높이.
         old_y = self.y
 
         self.y += (
@@ -183,7 +197,6 @@ class Player:
 
         self.on_ground = False
 
-        # 3. 하강 중 발판 착지.
         if self.velocity_y <= 0:
             landing = self.stage.find_landing(
                 self.x,
@@ -197,7 +210,7 @@ class Player:
                 self.velocity_y = 0.0
                 self.on_ground = True
 
-        # 4. 공중 공격 중 즉시 방향 전환.
+        # 공중에서는 공격 진행 상태를 유지하면서 방향만 바꾼다.
         if (
             self.attacking
             and not self.on_ground
@@ -230,7 +243,6 @@ class Player:
             ) % len(RUN_FRAMES)
 
         else:
-            # 점프 전용 이미지 제작 전까지 사용할 임시 자세.
             self.frame = 1.0
 
     def update_attack(self, frame_time):
@@ -241,10 +253,66 @@ class Player:
                 self.attacking = False
                 self.attack_elapsed = 0.0
 
-                # 이후 무기 교체 예약을 처리할 위치.
+                # 이후 이 위치에 무기 교체 예약 처리를 추가한다.
 
         if not self.attacking and self.attack_pressed:
             self.start_attack()
+
+    def get_attack_box(self):
+        """현재 공격 구간에 맞는 타격 사각형을 반환한다."""
+        if not self.attacking:
+            return None
+
+        progress = self.attack_elapsed / ATTACK_DURATION
+
+        # 준비 동작과 마무리 동작에는 타격 판정이 없다.
+        if not 0.25 <= progress < 0.75:
+            return None
+
+        # 위에서 아래로 베면서 타격 영역도 아래로 이동한다.
+        if progress < 0.5:
+            near_x, far_x = 4, 44
+            bottom_y, top_y = 20, 65
+
+        else:
+            near_x, far_x = 4, 48
+            bottom_y, top_y = 4, 40
+
+        if self.attack_direction == 1:
+            left = self.x + near_x
+            right = self.x + far_x
+
+        else:
+            left = self.x - far_x
+            right = self.x - near_x
+
+        return (
+            left,
+            self.y + bottom_y,
+            right,
+            self.y + top_y
+        )
+
+    def check_attack_hits(self):
+        attack_box = self.get_attack_box()
+
+        if attack_box is None:
+            return
+
+        for slime in self.stage.slimes:
+            if not slime.alive:
+                continue
+
+            # 같은 공격에서 이미 맞은 슬라임은 건너뛴다.
+            if slime in self.hit_targets:
+                continue
+
+            if rectangles_overlap(
+                attack_box,
+                slime.get_body_box()
+            ):
+                if slime.take_damage(BASIC_ATTACK_DAMAGE):
+                    self.hit_targets.add(slime)
 
     def draw(self):
         if self.attacking:
@@ -256,7 +324,7 @@ class Player:
             )
 
             frame_rect = ATTACK_FRAMES[frame_index]
-            draw_direction = self.attack_direction
+            direction = self.attack_direction
 
         else:
             if self.motion == "IDLE":
@@ -265,9 +333,9 @@ class Player:
                 frames = RUN_FRAMES
 
             frame_rect = frames[int(self.frame)]
-            draw_direction = self.face_direction
+            direction = self.face_direction
 
-        self.draw_frame(frame_rect, draw_direction)
+        self.draw_frame(frame_rect, direction)
 
     def draw_frame(self, frame_rect, direction):
         left, top, right, bottom = frame_rect
@@ -278,8 +346,6 @@ class Player:
 
         draw_width = source_width * PLAYER_DRAW_SCALE
         draw_height = source_height * PLAYER_DRAW_SCALE
-
-        # 아래쪽을 발 기준 높이에 맞춘다.
         draw_y = self.y + draw_height / 2
 
         if direction == 1:
