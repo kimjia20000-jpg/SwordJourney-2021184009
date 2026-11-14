@@ -9,6 +9,7 @@ from pico2d import (
     SDLK_LEFT,
     SDLK_RIGHT,
     SDLK_SPACE,
+    SDLK_a,
 )
 
 
@@ -20,12 +21,10 @@ JUMP_SPEED = 550.0
 GRAVITY = 1400.0
 GROUND_Y = 80
 
-# 모든 동작에 같은 배율을 적용한다.
 DRAW_SCALE = 160.0 / 311.0
 
-# 원본 이미지의 왼쪽 위를 기준으로 한 프레임 영역.
+# 원본 이미지의 왼쪽 위 기준 좌표.
 # (left, top, right, bottom)
-# 각 캐릭터 주변의 빈 공간을 제외한 좌표다.
 IDLE_FRAMES = (
     (103, 13, 313, 324),
     (456, 13, 667, 324),
@@ -40,9 +39,19 @@ RUN_FRAMES = (
     (1178, 382, 1381, 687),
 )
 
-# 초당 애니메이션 프레임 진행 수.
+ATTACK_FRAMES = (
+    (76, 741, 292, 1050),
+    (440, 743, 683, 1050),
+    (779, 754, 1063, 1050),
+    (1172, 741, 1393, 1050),
+)
+
 IDLE_FPS = 4.0
 RUN_FPS = 10.0
+
+# 첫 번째 검의 임시 공격 시간.
+# 나중에 무기별 데이터로 옮긴다.
+ATTACK_DURATION = 0.48
 
 
 class Player:
@@ -56,13 +65,12 @@ class Player:
             )
 
         self.x = 400.0
-
-        # 이번 단계부터 y는 이미지 중심이 아니라 발 기준 높이.
         self.y = float(GROUND_Y)
 
         self.left_pressed = False
         self.right_pressed = False
         self.jump_pressed = False
+        self.attack_pressed = False
 
         self.direction = 0
         self.face_direction = 1
@@ -70,12 +78,17 @@ class Player:
         self.velocity_y = 0.0
         self.on_ground = True
 
-        # 이동 상태와 애니메이션 진행 위치.
+        # 이동 상태.
         self.motion = "IDLE"
         self.frame = 0.0
 
-        # 모든 현재 프레임이 화면 안에 들어오도록 여백 계산.
-        all_frames = IDLE_FRAMES + RUN_FRAMES
+        # 이동 상태와 별도로 관리하는 공격 상태.
+        self.attacking = False
+        self.attack_elapsed = 0.0
+        self.attack_direction = 1
+
+        # 공격 이미지까지 화면 안에 들어오도록 여백 계산.
+        all_frames = IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
         max_width = max(
             right - left
             for left, top, right, bottom in all_frames
@@ -98,6 +111,16 @@ class Player:
                         self.velocity_y = JUMP_SPEED
                         self.on_ground = False
 
+            elif event.key == SDLK_a:
+                # 반복 KEYDOWN으로 공격을 초기화하지 않는다.
+                if not self.attack_pressed:
+                    self.attack_pressed = True
+
+                    # 짧게 눌렀다가 같은 루프에서 떼더라도
+                    # 공격 한 번은 시작되도록 여기서 처리.
+                    if not self.attacking:
+                        self.start_attack()
+
         elif event.type == SDL_KEYUP:
             if event.key == SDLK_LEFT:
                 self.left_pressed = False
@@ -108,14 +131,43 @@ class Player:
             elif event.key == SDLK_SPACE:
                 self.jump_pressed = False
 
+            elif event.key == SDLK_a:
+                # 현재 공격은 마무리하고 다음 공격만 중단.
+                self.attack_pressed = False
+
+    def start_attack(self):
+        # 이번 입력 상태를 반영해 공격 시작 방향 결정.
+        input_direction = (
+            int(self.right_pressed) - int(self.left_pressed)
+        )
+
+        if input_direction != 0:
+            self.face_direction = input_direction
+
+        self.attacking = True
+        self.attack_elapsed = 0.0
+
+        # 현재 공격이 끝날 때까지 이 방향을 유지한다.
+        self.attack_direction = self.face_direction
+
     def update(self, frame_time):
-        # 1. 좌우 이동.
+        # 공격 중에도 이동과 점프 계산은 계속한다.
+        self.update_movement(frame_time)
+        self.update_motion_animation(frame_time)
+        self.update_attack(frame_time)
+
+    def update_movement(self, frame_time):
         self.direction = (
             int(self.right_pressed) - int(self.left_pressed)
         )
 
         if self.direction != 0:
             self.face_direction = self.direction
+
+            # 공중 공격 중에는 입력 방향으로 즉시 베는 방향 변경.
+            # 공격 진행 시간은 유지한다.
+            if self.attacking and not self.on_ground:
+                self.attack_direction = self.direction
 
         self.x += self.direction * MOVE_SPEED * frame_time
 
@@ -127,7 +179,6 @@ class Player:
             )
         )
 
-        # 2. 점프와 착지.
         if not self.on_ground:
             self.y += (
                 self.velocity_y * frame_time
@@ -140,7 +191,7 @@ class Player:
                 self.velocity_y = 0.0
                 self.on_ground = True
 
-        # 3. 이동 상태 결정.
+    def update_motion_animation(self, frame_time):
         if not self.on_ground:
             next_motion = "AIR"
         elif self.direction != 0:
@@ -148,12 +199,10 @@ class Player:
         else:
             next_motion = "IDLE"
 
-        # 상태가 바뀔 때만 애니메이션을 처음부터 시작.
         if next_motion != self.motion:
             self.motion = next_motion
             self.frame = 0.0
 
-        # 4. 실제 경과 시간에 따라 애니메이션 진행.
         if self.motion == "IDLE":
             self.frame = (
                 self.frame + IDLE_FPS * frame_time
@@ -165,9 +214,22 @@ class Player:
             ) % len(RUN_FRAMES)
 
         else:
-            # 점프 전용 이미지가 없으므로
-            # 공중에서는 달리기 시트의 한 자세를 임시 사용.
             self.frame = 1.0
+
+    def update_attack(self, frame_time):
+        if self.attacking:
+            self.attack_elapsed += frame_time
+
+            if self.attack_elapsed >= ATTACK_DURATION:
+                self.attacking = False
+                self.attack_elapsed = 0.0
+
+                # 나중에 무기 교체 예약 처리를
+                # 이 위치에 추가한다.
+
+        # 이전 공격이 끝났고 A를 계속 누르면 다음 공격.
+        if not self.attacking and self.attack_pressed:
+            self.start_attack()
 
     def draw(self):
         draw_rectangle(
@@ -175,27 +237,42 @@ class Player:
             get_canvas_width() - 1, GROUND_Y
         )
 
-        if self.motion == "IDLE":
-            frames = IDLE_FRAMES
-        else:
-            frames = RUN_FRAMES
+        if self.attacking:
+            # 공격은 반복 순환하지 않고
+            # 준비 → 베기 → 마무리 순서로 재생한다.
+            progress = self.attack_elapsed / ATTACK_DURATION
 
-        left, top, right, bottom = frames[int(self.frame)]
+            frame_index = min(
+                int(progress * len(ATTACK_FRAMES)),
+                len(ATTACK_FRAMES) - 1
+            )
+
+            frame_rect = ATTACK_FRAMES[frame_index]
+            draw_direction = self.attack_direction
+
+        else:
+            if self.motion == "IDLE":
+                frames = IDLE_FRAMES
+            else:
+                frames = RUN_FRAMES
+
+            frame_rect = frames[int(self.frame)]
+            draw_direction = self.face_direction
+
+        self.draw_frame(frame_rect, draw_direction)
+
+    def draw_frame(self, frame_rect, direction):
+        left, top, right, bottom = frame_rect
 
         source_width = right - left
         source_height = bottom - top
-
-        # 이미지 좌표의 위쪽 기준을
-        # pico2d의 아래쪽 기준으로 변환.
         source_bottom = self.image.h - bottom
 
         draw_width = source_width * DRAW_SCALE
         draw_height = source_height * DRAW_SCALE
-
-        # 프레임 높이가 달라도 아래쪽을 발 기준 높이에 맞춘다.
         draw_y = self.y + draw_height / 2
 
-        if self.face_direction == 1:
+        if direction == 1:
             self.image.clip_draw(
                 left, source_bottom,
                 source_width, source_height,
