@@ -1,7 +1,8 @@
 import math
 import random
+from pathlib import Path
 
-from pico2d import draw_rectangle
+from pico2d import draw_rectangle, load_image
 from settings import SLIME_WIDTH, SLIME_HEIGHT
 
 
@@ -16,14 +17,31 @@ SQUASH_TIME = 0.16
 LAND_TIME = 0.12
 
 SLIME_MAX_HP = 30
-HIT_FLASH_TIME = 0.18
+
+# 피격 자세를 유지하는 최소 시간.
+HURT_TIME = 0.20
+
+# 수평 넉백과 위로 튀는 정도.
+KNOCKBACK_SPEED = 220.0
+KNOCKBACK_DECELERATION = 1100.0
+KNOCKBACK_UP_SPEED = 120.0
 
 HP_BAR_WIDTH = 40
 HP_BAR_HEIGHT = 5
 HP_BAR_GAP = 7
 
+HURT_IMAGE_PATH = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "images"
+    / "slime_hurt.png"
+)
+
 
 class Slime:
+    # 모든 슬라임이 같은 피격 이미지를 공유한다.
+    _hurt_image = None
+
     def __init__(
         self,
         image,
@@ -36,77 +54,83 @@ class Slime:
         self.image = image
         self.platform = platform
 
+        if Slime._hurt_image is None:
+            Slime._hurt_image = load_image(str(HURT_IMAGE_PATH))
+
+        self.hurt_image = Slime._hurt_image
+
         self.width = SLIME_WIDTH
         self.height = SLIME_HEIGHT
 
         self.direction = direction
+        self.hurt_direction = direction
         self.speed = SLIME_MOVE_SPEED
 
-        # 몸이 옆으로 늘어나는 연출까지 고려한 여백.
+        # 몸이 늘어나는 연출까지 고려한 여백.
         margin = self.width * 1.15 / 2 + 4
 
         self.left_limit = platform.left + margin
         self.right_limit = platform.right - margin
 
         if patrol_left is not None:
-            self.left_limit = max(
-                self.left_limit,
-                patrol_left
-            )
+            self.left_limit = max(self.left_limit, patrol_left)
 
         if patrol_right is not None:
-            self.right_limit = min(
-                self.right_limit,
-                patrol_right
-            )
+            self.right_limit = min(self.right_limit, patrol_right)
 
         if self.left_limit > self.right_limit:
             raise ValueError("슬라임의 순찰 구역이 너무 좁습니다.")
 
-        self.x = max(
-            self.left_limit,
-            min(self.right_limit, x)
-        )
+        self.x = max(self.left_limit, min(self.right_limit, x))
 
-        # y는 몸 아래쪽 기준 높이.
+        # y는 몸 아래쪽 높이.
         self.y = float(platform.top)
+
         self.velocity_y = 0.0
         self.velocity_x = 0.0
 
         self.state = "WAIT"
         self.state_time = 0.0
-        self.wait_duration = random.uniform(
-            0.0,
-            WAIT_TIME_MAX
-        )
+        self.wait_duration = random.uniform(0.0, WAIT_TIME_MAX)
 
-        # 체력과 생존 상태.
         self.max_hp = SLIME_MAX_HP
         self.hp = self.max_hp
         self.alive = True
 
-        # 첫 피격 전에는 체력바를 숨긴다.
         self.show_health_bar = False
-        self.hit_flash_remaining = 0.0
 
-    def take_damage(self, damage):
-        """피해를 적용하고 실제로 적용됐는지 반환한다."""
+    def take_damage(self, damage, attack_direction=None):
+        """피해와 넉백을 적용한다. 피격 중에도 다시 맞을 수 있다."""
         if not self.alive or damage <= 0:
             return False
 
         self.hp = max(0, self.hp - damage)
-
         self.show_health_bar = True
-        self.hit_flash_remaining = HIT_FLASH_TIME
 
         if self.hp == 0:
             self.alive = False
+            self.velocity_x = 0.0
+            self.velocity_y = 0.0
+            return True
+
+        # 방향을 전달하지 않은 기존 호출에도 대응.
+        if attack_direction is None:
+            attack_direction = -self.direction
+
+        self.hurt_direction = 1 if attack_direction >= 0 else -1
+        self.direction = self.hurt_direction
+
+        self.velocity_x = self.hurt_direction * KNOCKBACK_SPEED
+        self.velocity_y = KNOCKBACK_UP_SPEED
+
+        # 기존 점프를 중단하고 피격 상태로 전환한다.
+        self.state = "HURT"
+        self.state_time = 0.0
 
         return True
 
     def get_body_box(self):
-        # 변형 연출 때문에 피격 범위가 계속 바뀌지 않도록
-        # 기본 크기를 기준으로 판정한다.
+        # 이미지 변형과 관계없이 기본 크기로 충돌 판정.
         return (
             self.x - self.width / 2,
             self.y,
@@ -115,44 +139,64 @@ class Slime:
         )
 
     def start_jump(self):
-        flight_time = (
-            2 * SLIME_JUMP_SPEED / SLIME_GRAVITY
-        )
-
+        flight_time = 2 * SLIME_JUMP_SPEED / SLIME_GRAVITY
         expected_distance = self.speed * flight_time
 
         if self.direction == 1:
-            available_distance = self.right_limit - self.x
+            available = self.right_limit - self.x
         else:
-            available_distance = self.x - self.left_limit
+            available = self.x - self.left_limit
 
-        if available_distance < expected_distance:
+        if available < expected_distance:
             self.direction *= -1
 
         if self.direction == 1:
-            available_distance = self.right_limit - self.x
+            available = self.right_limit - self.x
         else:
-            available_distance = self.x - self.left_limit
+            available = self.x - self.left_limit
 
-        jump_speed_x = min(
+        speed = min(
             self.speed,
-            max(0.0, available_distance) / flight_time
+            max(0.0, available) / flight_time
         )
 
-        self.velocity_x = self.direction * jump_speed_x
+        self.velocity_x = self.direction * speed
         self.velocity_y = SLIME_JUMP_SPEED
 
         self.state = "AIR"
         self.state_time = 0.0
 
+    def clamp_x(self):
+        """이동과 넉백 모두 순찰 구역 안으로 제한한다."""
+        limited = max(
+            self.left_limit,
+            min(self.right_limit, self.x)
+        )
+
+        if limited != self.x:
+            self.velocity_x = 0.0
+
+        self.x = limited
+
+    def update_vertical(self, dt):
+        """중력을 적용하고 자기 발판에 착지했는지 반환한다."""
+        self.y += (
+            self.velocity_y * dt
+            - 0.5 * SLIME_GRAVITY * dt ** 2
+        )
+
+        self.velocity_y -= SLIME_GRAVITY * dt
+
+        if self.velocity_y <= 0 and self.y <= self.platform.top:
+            self.y = float(self.platform.top)
+            self.velocity_y = 0.0
+            return True
+
+        return False
+
     def update(self, frame_time):
         if not self.alive:
             return
-
-        self.hit_flash_remaining = max(
-            0.0,
-            self.hit_flash_remaining - frame_time
-        )
 
         self.state_time += frame_time
 
@@ -167,29 +211,42 @@ class Slime:
 
         elif self.state == "AIR":
             self.x += self.velocity_x * frame_time
+            self.clamp_x()
 
-            self.y += (
-                self.velocity_y * frame_time
-                - 0.5 * SLIME_GRAVITY * frame_time ** 2
-            )
+            if self.update_vertical(frame_time):
+                self.enter_land()
 
-            self.velocity_y -= SLIME_GRAVITY * frame_time
+        elif self.state == "HURT":
+            # 처음에는 빠르게 밀리고 점차 감속한다.
+            speed = abs(self.velocity_x)
 
-            self.x = max(
-                self.left_limit,
-                min(self.right_limit, self.x)
-            )
+            if speed > 0:
+                move_time = min(
+                    frame_time,
+                    speed / KNOCKBACK_DECELERATION
+                )
 
-            if (
-                self.velocity_y <= 0
-                and self.y <= self.platform.top
-            ):
-                self.y = float(self.platform.top)
-                self.velocity_y = 0.0
-                self.velocity_x = 0.0
+                distance = (
+                    speed * move_time
+                    - 0.5 * KNOCKBACK_DECELERATION * move_time ** 2
+                )
 
-                self.state = "LAND"
-                self.state_time = 0.0
+                self.x += self.hurt_direction * distance
+
+                speed = max(
+                    0.0,
+                    speed - KNOCKBACK_DECELERATION * move_time
+                )
+
+                self.velocity_x = self.hurt_direction * speed
+
+            self.clamp_x()
+
+            # 공중에서 맞았어도 발판까지 자연스럽게 내려온다.
+            landed = self.update_vertical(frame_time)
+
+            if landed and self.state_time >= HURT_TIME:
+                self.enter_land()
 
         elif self.state == "LAND":
             if self.state_time >= LAND_TIME:
@@ -201,15 +258,17 @@ class Slime:
                     WAIT_TIME_MAX
                 )
 
+    def enter_land(self):
+        self.velocity_x = 0.0
+        self.state = "LAND"
+        self.state_time = 0.0
+
     def get_draw_size(self):
         width_scale = 1.0
         height_scale = 1.0
 
         if self.state == "SQUASH":
-            progress = min(
-                self.state_time / SQUASH_TIME,
-                1.0
-            )
+            progress = min(self.state_time / SQUASH_TIME, 1.0)
 
             width_scale = 1.0 + 0.15 * progress
             height_scale = 1.0 - 0.18 * progress
@@ -224,11 +283,7 @@ class Slime:
             height_scale = 1.0 + 0.12 * stretch
 
         elif self.state == "LAND":
-            progress = min(
-                self.state_time / LAND_TIME,
-                1.0
-            )
-
+            progress = min(self.state_time / LAND_TIME, 1.0)
             squash = math.sin(math.pi * progress)
 
             width_scale = 1.0 + 0.12 * squash
@@ -243,47 +298,48 @@ class Slime:
         if not self.alive:
             return
 
-        # 피격 깜빡임은 시각 효과이며 별도의 무적 시간은 아니다.
-        if self.hit_flash_remaining > 0:
-            if int(self.hit_flash_remaining / 0.045) % 2 == 1:
-                return
+        if self.state == "HURT":
+            image = self.hurt_image
 
-        left = 136
-        top = 171
-        right = 1311
-        bottom = 987
+            # 생성한 피격 이미지에서 몸 부분만 사용.
+            left = round(image.w * 197 / 1448)
+            right = round(image.w * 1288 / 1448)
+            top = round(image.h * 181 / 1086)
+            bottom = round(image.h * 987 / 1086)
 
-        source_width = right - left
-        source_height = bottom - top
-        source_bottom = self.image.h - bottom
+            direction = self.hurt_direction
 
-        draw_width, draw_height = self.get_draw_size()
-        draw_y = self.y + draw_height / 2
-
-        if self.direction == 1:
-            self.image.clip_draw(
-                left,
-                source_bottom,
-                source_width,
-                source_height,
-                self.x,
-                draw_y,
-                draw_width,
-                draw_height
-            )
+            draw_width = self.width
+            draw_height = self.height
 
         else:
-            self.image.clip_composite_draw(
-                left,
-                source_bottom,
-                source_width,
-                source_height,
-                0,
-                'h',
-                self.x,
-                draw_y,
-                draw_width,
-                draw_height
+            image = self.image
+            left, top, right, bottom = 136, 171, 1311, 987
+
+            direction = self.direction
+            draw_width, draw_height = self.get_draw_size()
+
+        width = right - left
+        height = bottom - top
+        source_bottom = image.h - bottom
+
+        draw_y = self.y + draw_height / 2
+
+        # 피격 원본은 오른쪽으로 밀리는 자세.
+        if direction == 1:
+            image.clip_draw(
+                left, source_bottom,
+                width, height,
+                self.x, draw_y,
+                draw_width, draw_height
+            )
+        else:
+            image.clip_composite_draw(
+                left, source_bottom,
+                width, height,
+                0, 'h',
+                self.x, draw_y,
+                draw_width, draw_height
             )
 
     def draw_health_bar(self):
@@ -291,9 +347,6 @@ class Slime:
             return
 
         left = round(self.x - HP_BAR_WIDTH / 2)
-
-        # 몸이 늘어나는 연출에도 체력바가 겹치지 않도록
-        # 최대 표시 높이 위에 배치한다.
         bottom = round(
             self.y + self.height * 1.12 + HP_BAR_GAP
         )
@@ -301,37 +354,27 @@ class Slime:
         right = left + HP_BAR_WIDTH - 1
         top = bottom + HP_BAR_HEIGHT - 1
 
-        # 어두운 테두리.
         draw_rectangle(
-            left - 1,
-            bottom - 1,
-            right + 1,
-            top + 1,
+            left - 1, bottom - 1,
+            right + 1, top + 1,
             20, 25, 20,
             filled=True
         )
 
-        # 체력이 비어 있는 부분.
         draw_rectangle(
-            left,
-            bottom,
-            right,
-            top,
+            left, bottom, right, top,
             70, 70, 70,
             filled=True
         )
 
-        # 남은 체력에 비례하는 초록색 영역.
         fill_width = round(
             HP_BAR_WIDTH * self.hp / self.max_hp
         )
 
         if fill_width > 0:
             draw_rectangle(
-                left,
-                bottom,
-                left + fill_width - 1,
-                top,
+                left, bottom,
+                left + fill_width - 1, top,
                 70, 220, 80,
                 filled=True
             )

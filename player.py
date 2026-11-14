@@ -24,12 +24,9 @@ from settings import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
 HURT_IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_hurt.png"
 
-
-# 스프라이트 좌표: 왼쪽, 위쪽, 오른쪽, 아래쪽
 IDLE_FRAMES = (
     (103, 13, 313, 324),
     (456, 13, 667, 324),
@@ -51,9 +48,7 @@ ATTACK_FRAMES = (
     (1172, 741, 1393, 1050),
 )
 
-
 BASIC_ATTACK_DAMAGE = 10
-
 PLAYER_MAX_HP = 100
 SLIME_CONTACT_DAMAGE = 10
 
@@ -63,14 +58,9 @@ BLINK_INTERVAL = 0.08
 PLAYER_BODY_HALF_WIDTH = 16.0
 PLAYER_BODY_HEIGHT = 72.0
 
-# 피격 시 잠깐 조작이 제한되는 시간
 HURT_DURATION = 0.22
-
-# 넉백 초기 속도와 감속
 KNOCKBACK_SPEED = 300.0
 KNOCKBACK_DECELERATION = 1000.0
-
-# 피격 시 살짝 위로 튀는 속도
 KNOCKBACK_UP_SPEED = 180.0
 
 
@@ -96,21 +86,15 @@ class Player:
                 "1448x1086 크기의 원본 이미지를 사용해야 합니다."
             )
 
-        # 새 피격 이미지의 투명 여백을 제외할 영역
-        # 원본 1254x1254 기준이며 같은 비율로 저장된 이미지에도 대응
-        source_width = self.hurt_image.w
-        source_height = self.hurt_image.h
-
         self.hurt_rect = (
             0,
-            round(source_height * 35 / 1254),
-            round(source_width * 1214 / 1254),
-            round(source_height * 1228 / 1254),
+            round(self.hurt_image.h * 35 / 1254),
+            round(self.hurt_image.w * 1214 / 1254),
+            round(self.hurt_image.h * 1228 / 1254),
         )
 
         self.x = stage.spawn_x
         self.y = stage.spawn_y
-
         self.foot_half_width = PLAYER_FOOT_HALF_WIDTH
 
         self.left_pressed = False
@@ -135,7 +119,6 @@ class Player:
         self.max_hp = PLAYER_MAX_HP
         self.hp = self.max_hp
         self.alive = True
-
         self.invincible_remaining = 0.0
 
         self.hurt_remaining = 0.0
@@ -143,19 +126,16 @@ class Player:
         self.knockback_velocity_x = 0.0
 
         all_frames = IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
-
         self.half_width = (
             max(right - left for left, top, right, bottom in all_frames)
-            * PLAYER_DRAW_SCALE
-            / 2
+            * PLAYER_DRAW_SCALE / 2
         )
 
     def handle_event(self, event):
         if not self.alive:
             return
 
-        # 피격 중에도 키를 눌렀거나 뗀 상태는 기록한다.
-        # 실제 이동과 공격은 피격 경직이 끝난 후 재개한다.
+        # 피격 중에도 키를 누르거나 뗀 상태는 기록한다.
         if event.type == SDL_KEYDOWN:
             if event.key == SDLK_LEFT:
                 self.left_pressed = True
@@ -181,13 +161,10 @@ class Player:
         elif event.type == SDL_KEYUP:
             if event.key == SDLK_LEFT:
                 self.left_pressed = False
-
             elif event.key == SDLK_RIGHT:
                 self.right_pressed = False
-
             elif event.key == SDLK_SPACE:
                 self.jump_pressed = False
-
             elif event.key == SDLK_a:
                 self.attack_pressed = False
 
@@ -217,19 +194,16 @@ class Player:
             return
 
         self.invincible_remaining = max(
-            0.0,
-            self.invincible_remaining - dt,
+            0.0, self.invincible_remaining - dt
         )
 
         was_hurt = self.hurt_remaining > 0
 
-        # 피격 중에도 중력과 발판 충돌은 계속 처리한다.
         self.update_movement(dt)
 
         if was_hurt:
             self.hurt_remaining = max(
-                0.0,
-                self.hurt_remaining - dt,
+                0.0, self.hurt_remaining - dt
             )
 
             if self.hurt_remaining <= 0:
@@ -240,7 +214,6 @@ class Player:
 
         self.update_motion_animation(dt)
         self.update_attack(dt)
-
         self.check_attack_hits()
         self.check_contact_damage()
 
@@ -259,10 +232,8 @@ class Player:
 
             self.x += self.direction * MOVE_SPEED * dt
 
-        # 화면 밖으로 밀려나지 않도록 제한한다.
         minimum_x = self.half_width
         maximum_x = get_canvas_width() - self.half_width
-
         limited_x = max(minimum_x, min(maximum_x, self.x))
 
         if limited_x != self.x:
@@ -282,10 +253,7 @@ class Player:
 
         if self.velocity_y <= 0:
             platform = self.stage.find_landing(
-                self.x,
-                self.foot_half_width,
-                old_y,
-                self.y,
+                self.x, self.foot_half_width, old_y, self.y
             )
 
             if platform is not None:
@@ -293,7 +261,7 @@ class Player:
                 self.velocity_y = 0.0
                 self.on_ground = True
 
-        # 공중 공격 중에는 이동 입력에 따라 공격 방향 전환
+        # 공중 공격은 방향키로 공격 방향을 바꿀 수 있다.
         if (
             self.attacking
             and not self.on_ground
@@ -307,11 +275,8 @@ class Player:
         if speed <= 0:
             return
 
-        direction = (
-            1 if self.knockback_velocity_x > 0 else -1
-        )
+        direction = 1 if self.knockback_velocity_x > 0 else -1
 
-        # 남은 피격 시간과 정지까지 걸리는 시간 안에서만 이동
         move_time = min(
             dt,
             self.hurt_remaining,
@@ -320,7 +285,7 @@ class Player:
 
         distance = (
             speed * move_time
-            - 0.5 * KNOCKBACK_DECELERATION * move_time * move_time
+            - 0.5 * KNOCKBACK_DECELERATION * move_time ** 2
         )
 
         self.x += direction * distance
@@ -365,7 +330,6 @@ class Player:
                 self.attacking = False
                 self.attack_elapsed = 0.0
 
-        # 공격 키를 계속 누르면 다음 공격으로 이어진다.
         if not self.attacking and self.attack_pressed:
             self.start_attack()
 
@@ -406,17 +370,19 @@ class Player:
             return
 
         for slime in self.stage.slimes:
-            if not slime.alive:
-                continue
-
-            if slime in self.hit_targets:
+            if not slime.alive or slime in self.hit_targets:
                 continue
 
             if rectangles_overlap(
                 attack_box,
                 slime.get_body_box(),
             ):
-                if slime.take_damage(BASIC_ATTACK_DAMAGE):
+                # 실제 공격 방향을 전달해 그 방향으로 밀어낸다.
+                if slime.take_damage(
+                    BASIC_ATTACK_DAMAGE,
+                    attack_direction=self.attack_direction,
+                ):
+                    # 같은 공격으로 같은 슬라임을 중복 타격하지 않는다.
                     self.hit_targets.add(slime)
 
     def get_body_box(self):
@@ -463,8 +429,6 @@ class Player:
 
         self.invincible_remaining = INVINCIBLE_DURATION
 
-        # 공격자가 오른쪽이면 왼쪽으로 밀린다.
-        # 위치가 같거나 공격자 위치가 없으면 바라보는 반대쪽.
         if source_x is None or source_x == self.x:
             knockback_direction = -self.face_direction
         elif source_x > self.x:
@@ -475,8 +439,6 @@ class Player:
         self.cancel_attack()
 
         self.hurt_remaining = HURT_DURATION
-
-        # 맞은 상대를 바라보면서 뒤로 밀리는 자세
         self.hurt_face_direction = -knockback_direction
         self.face_direction = self.hurt_face_direction
 
@@ -513,12 +475,10 @@ class Player:
         self.frame = 0.0
 
     def draw(self):
-        # 피격 직후에는 자세가 확실히 보이도록 표시한다.
         if self.alive and self.hurt_remaining > 0:
             self.draw_hurt()
             return
 
-        # 피격 자세가 끝나면 남은 무적 시간 동안 깜빡인다.
         if self.alive and self.invincible_remaining > 0:
             blink_frame = int(
                 self.invincible_remaining / BLINK_INTERVAL
@@ -541,10 +501,9 @@ class Player:
             direction = self.attack_direction
 
         else:
-            if self.motion == "IDLE":
-                frames = IDLE_FRAMES
-            else:
-                frames = RUN_FRAMES
+            frames = (
+                IDLE_FRAMES if self.motion == "IDLE" else RUN_FRAMES
+            )
 
             rect = frames[int(self.frame)]
             direction = self.face_direction
@@ -556,37 +515,26 @@ class Player:
 
         width = right - left
         height = bottom - top
-
         source_bottom = self.image.h - bottom
 
         draw_width = width * PLAYER_DRAW_SCALE
         draw_height = height * PLAYER_DRAW_SCALE
-
         draw_y = self.y + draw_height / 2
 
         if direction == 1:
             self.image.clip_draw(
-                left,
-                source_bottom,
-                width,
-                height,
-                self.x,
-                draw_y,
-                draw_width,
-                draw_height,
+                left, source_bottom,
+                width, height,
+                self.x, draw_y,
+                draw_width, draw_height,
             )
         else:
             self.image.clip_composite_draw(
-                left,
-                source_bottom,
-                width,
-                height,
-                0,
-                "h",
-                self.x,
-                draw_y,
-                draw_width,
-                draw_height,
+                left, source_bottom,
+                width, height,
+                0, "h",
+                self.x, draw_y,
+                draw_width, draw_height,
             )
 
     def draw_hurt(self):
@@ -594,36 +542,24 @@ class Player:
 
         width = right - left
         height = bottom - top
-
         source_bottom = self.hurt_image.h - bottom
 
-        # 기존 대기 자세의 높이에 맞춰 크기를 유지한다.
         draw_height = 311.0 * PLAYER_DRAW_SCALE
         draw_width = draw_height * width / height
-
         draw_y = self.y + draw_height / 2
 
         if self.hurt_face_direction == 1:
             self.hurt_image.clip_draw(
-                left,
-                source_bottom,
-                width,
-                height,
-                self.x,
-                draw_y,
-                draw_width,
-                draw_height,
+                left, source_bottom,
+                width, height,
+                self.x, draw_y,
+                draw_width, draw_height,
             )
         else:
             self.hurt_image.clip_composite_draw(
-                left,
-                source_bottom,
-                width,
-                height,
-                0,
-                "h",
-                self.x,
-                draw_y,
-                draw_width,
-                draw_height,
+                left, source_bottom,
+                width, height,
+                0, "h",
+                self.x, draw_y,
+                draw_width, draw_height,
             )
