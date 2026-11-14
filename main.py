@@ -35,13 +35,16 @@ def handle_events(player):
     return running
 
 
-def update(player, frame_time):
+def update(stage, player, frame_time):
     remaining_time = frame_time
     max_step = 1.0 / 120.0
 
     while remaining_time > 0:
         step = min(remaining_time, max_step)
+
+        stage.update(step)
         player.update(step)
+
         remaining_time -= step
 
 
@@ -73,7 +76,7 @@ def main():
             if not handle_events(player):
                 break
 
-            update(player, frame_time)
+            update(stage, player, frame_time)
             draw(stage, player)
 
             delay(0.01)
