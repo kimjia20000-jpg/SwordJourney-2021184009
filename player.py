@@ -27,7 +27,6 @@ BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
 
 # 원본 이미지의 왼쪽 위 기준 좌표.
-# (왼쪽, 위쪽, 오른쪽, 아래쪽)
 IDLE_FRAMES = (
     (103, 13, 313, 324),
     (456, 13, 667, 324),
@@ -49,7 +48,18 @@ ATTACK_FRAMES = (
     (1172, 741, 1393, 1050),
 )
 
+# 전투 테스트 설정.
 BASIC_ATTACK_DAMAGE = 10
+PLAYER_MAX_HP = 100
+SLIME_CONTACT_DAMAGE = 10
+
+INVINCIBLE_DURATION = 1.0
+BLINK_INTERVAL = 0.08
+
+# 검과 머리카락을 제외한 몸 주변의 접촉 판정.
+# 현재 캐릭터 크기에 맞춰 조정할 수 있는 값.
+PLAYER_BODY_HALF_WIDTH = 16.0
+PLAYER_BODY_HEIGHT = 72.0
 
 
 def rectangles_overlap(a, b):
@@ -91,7 +101,7 @@ class Player:
         self.velocity_y = 0.0
         self.on_ground = True
 
-        # 이동 애니메이션 상태.
+        # 이동 애니메이션.
         self.motion = "IDLE"
         self.frame = 0.0
 
@@ -99,9 +109,13 @@ class Player:
         self.attacking = False
         self.attack_elapsed = 0.0
         self.attack_direction = 1
-
-        # 이번 공격에서 이미 맞힌 슬라임을 기록한다.
         self.hit_targets = set()
+
+        # 체력과 피격 상태.
+        self.max_hp = PLAYER_MAX_HP
+        self.hp = self.max_hp
+        self.alive = True
+        self.invincible_remaining = 0.0
 
         all_frames = IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
 
@@ -113,6 +127,9 @@ class Player:
         self.half_width = max_width * PLAYER_DRAW_SCALE / 2
 
     def handle_event(self, event):
+        if not self.alive:
+            return
+
         if event.type == SDL_KEYDOWN:
             if event.key == SDLK_LEFT:
                 self.left_pressed = True
@@ -149,6 +166,9 @@ class Player:
                 self.attack_pressed = False
 
     def start_attack(self):
+        if not self.alive:
+            return
+
         input_direction = (
             int(self.right_pressed) - int(self.left_pressed)
         )
@@ -159,15 +179,27 @@ class Player:
         self.attacking = True
         self.attack_elapsed = 0.0
         self.attack_direction = self.face_direction
-
-        # 새로운 공격이므로 같은 슬라임을 다시 맞힐 수 있다.
         self.hit_targets.clear()
 
     def update(self, frame_time):
+        if not self.alive:
+            return
+
+        # 무적 시간은 실제 경과 시간에 따라 감소.
+        self.invincible_remaining = max(
+            0.0,
+            self.invincible_remaining - frame_time
+        )
+
         self.update_movement(frame_time)
         self.update_motion_animation(frame_time)
         self.update_attack(frame_time)
+
+        # 플레이어의 공격을 먼저 처리한다.
         self.check_attack_hits()
+
+        # 공격으로 처치되지 않은 슬라임만 접촉 피해를 준다.
+        self.check_contact_damage()
 
     def update_movement(self, frame_time):
         self.direction = (
@@ -193,8 +225,8 @@ class Player:
             self.velocity_y * frame_time
             - 0.5 * GRAVITY * frame_time ** 2
         )
-        self.velocity_y -= GRAVITY * frame_time
 
+        self.velocity_y -= GRAVITY * frame_time
         self.on_ground = False
 
         if self.velocity_y <= 0:
@@ -210,7 +242,7 @@ class Player:
                 self.velocity_y = 0.0
                 self.on_ground = True
 
-        # 공중에서는 공격 진행 상태를 유지하면서 방향만 바꾼다.
+        # 공중 공격 중에는 방향키로 즉시 회전.
         if (
             self.attacking
             and not self.on_ground
@@ -253,23 +285,21 @@ class Player:
                 self.attacking = False
                 self.attack_elapsed = 0.0
 
-                # 이후 이 위치에 무기 교체 예약 처리를 추가한다.
+                # 이후 무기 교체 예약을 처리할 위치.
 
         if not self.attacking and self.attack_pressed:
             self.start_attack()
 
     def get_attack_box(self):
-        """현재 공격 구간에 맞는 타격 사각형을 반환한다."""
         if not self.attacking:
             return None
 
         progress = self.attack_elapsed / ATTACK_DURATION
 
-        # 준비 동작과 마무리 동작에는 타격 판정이 없다.
+        # 준비와 마무리 구간에는 타격 판정이 없다.
         if not 0.25 <= progress < 0.75:
             return None
 
-        # 위에서 아래로 베면서 타격 영역도 아래로 이동한다.
         if progress < 0.5:
             near_x, far_x = 4, 44
             bottom_y, top_y = 20, 65
@@ -303,7 +333,6 @@ class Player:
             if not slime.alive:
                 continue
 
-            # 같은 공격에서 이미 맞은 슬라임은 건너뛴다.
             if slime in self.hit_targets:
                 continue
 
@@ -314,7 +343,82 @@ class Player:
                 if slime.take_damage(BASIC_ATTACK_DAMAGE):
                     self.hit_targets.add(slime)
 
+    def get_body_box(self):
+        """플레이어 몸의 접촉 판정 영역."""
+        return (
+            self.x - PLAYER_BODY_HALF_WIDTH,
+            self.y,
+            self.x + PLAYER_BODY_HALF_WIDTH,
+            self.y + PLAYER_BODY_HEIGHT
+        )
+
+    def check_contact_damage(self):
+        if not self.alive:
+            return
+
+        if self.invincible_remaining > 0:
+            return
+
+        body_box = self.get_body_box()
+
+        for slime in self.stage.slimes:
+            if not slime.alive:
+                continue
+
+            if rectangles_overlap(
+                body_box,
+                slime.get_body_box()
+            ):
+                if self.take_damage(SLIME_CONTACT_DAMAGE):
+                    # 여러 마리와 겹쳐도 이번에는 한 번만 피해.
+                    break
+
+    def take_damage(self, damage):
+        if not self.alive or damage <= 0:
+            return False
+
+        if self.invincible_remaining > 0:
+            return False
+
+        self.hp = max(0, self.hp - damage)
+
+        if self.hp == 0:
+            self.die()
+
+        else:
+            self.invincible_remaining = INVINCIBLE_DURATION
+
+        return True
+
+    def die(self):
+        self.alive = False
+        self.invincible_remaining = 0.0
+
+        self.left_pressed = False
+        self.right_pressed = False
+        self.jump_pressed = False
+        self.attack_pressed = False
+
+        self.direction = 0
+        self.velocity_y = 0.0
+
+        self.attacking = False
+        self.attack_elapsed = 0.0
+        self.hit_targets.clear()
+
+        self.motion = "IDLE"
+        self.frame = 0.0
+
     def draw(self):
+        # 무적 시간에는 캐릭터를 번갈아 숨겨 깜빡임 표현.
+        if self.alive and self.invincible_remaining > 0:
+            blink_phase = int(
+                self.invincible_remaining / BLINK_INTERVAL
+            )
+
+            if blink_phase % 2 == 1:
+                return
+
         if self.attacking:
             progress = self.attack_elapsed / ATTACK_DURATION
 
