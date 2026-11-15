@@ -40,6 +40,11 @@ class Minimap:
         x1, y1 = self.project(stage, camera.x, 0)
         x2, y2 = self.project(stage, camera.x + camera.width, stage.height)
         draw_rectangle(round(x1), round(y1), round(x2), round(y2), 235, 235, 221)
+        if stage.portal.active:
+            x, y = self.project(stage, stage.portal.x, stage.portal.y + 60)
+            # 출구는 점보다 큰 푸른 사각 테두리로 구분한다.
+            x, y = round(x), round(y)
+            draw_rectangle(x - 4, y - 5, x + 4, y + 5, 95, 216, 255)
         for slime in stage.slimes:
             if slime.alive:
                 x, y = self.project(stage, slime.x, slime.y + slime.height / 2)

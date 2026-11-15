@@ -63,6 +63,7 @@ def handle_events(player):
                 action = "restart"
 
         else:
+            player.stage.handle_portal_event(event, player)
             player.handle_event(event)
 
     return action
@@ -91,6 +92,8 @@ def update(stage, player, frame_time):
 
         if not player.alive:
             break
+
+        stage.resolve_clear()
 
         remaining_time -= step
 
@@ -218,6 +221,8 @@ def draw(stage, player, camera, minimap, normal_font, title_font):
     normal_font.draw(446, SCREEN_HEIGHT - 39,
                      f"1스테이지  ·  {stage.zone_name(player.x)}", (240, 240, 220))
     minimap.draw(stage, player, camera, normal_font)
+
+    stage.draw_status(player, normal_font, title_font)
 
     if not player.alive:
         draw_game_over(normal_font, title_font)

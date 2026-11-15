@@ -6,6 +6,7 @@ from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, GROUND_Y, PLATFORM_THICKNESS,
 )
 from slime import Slime
+from portal import Portal
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -74,6 +75,10 @@ class Stage:
         self.platforms.extend(Platform(*layout) for layout in layouts)
         self.create_slimes()
         self.initial_monster_count = len(self.slimes)
+        self.cleared = False
+        self.clear_banner_remaining = 0.0
+        # 오른쪽 끝의 높이 250 발판. 아래층과 진입 판정을 구분한다.
+        self.portal = Portal(self.width - 110, self.platforms[-2].top)
 
         # 장식은 충돌 대상이 아니다. 위치와 색상을 고정해 재시작 시 유지.
         self.trees = [
@@ -126,7 +131,45 @@ class Stage:
                     landing = platform
         return landing
 
+    def resolve_clear(self):
+        # 마지막 공격과 사망 몬스터 정리가 끝난 뒤 호출한다.
+        # 한 번만 전환하므로 배너와 포탈이 매 프레임 초기화되지 않는다.
+        if self.cleared or self.remaining_monsters != 0:
+            return False
+        self.cleared = True
+        self.clear_banner_remaining = 3.2
+        self.portal.activate()
+        return True
+
+    def handle_portal_event(self, event, player):
+        if self.portal.handle_event(event, player):
+            # 2스테이지 구현 전에는 현재 맵을 유지한다.
+            self.portal.show_notice("2스테이지는 준비 중입니다. 현재 맵을 계속 탐험하세요.")
+
+    def draw_status(self, player, normal_font, title_font):
+        if not player.alive:
+            return
+        if self.clear_banner_remaining > 0:
+            cx, cy = SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2
+            draw_rectangle(cx - 260, cy - 48, cx + 260, cy + 64,
+                           25, 48, 43, filled=True)
+            draw_rectangle(cx - 260, cy - 48, cx + 260, cy + 64, 170, 226, 183)
+            title_font.draw(cx - 150, cy + 23, "1스테이지 클리어!", (255, 229, 137))
+            normal_font.draw(cx - 193, cy - 22,
+                             "오른쪽 끝 출구 포탈이 열렸습니다.", (220, 247, 235))
+        if self.portal.notice_remaining > 0:
+            message = self.portal.notice
+        elif self.portal.nearby(player):
+            message = ("위 방향키 : 포탈 진입" if self.portal.active
+                       else "닫힌 포탈 — 모든 몬스터를 처치하세요.")
+        else:
+            return
+        draw_rectangle(265, 18, SCREEN_WIDTH - 265, 61, 25, 43, 37, filled=True)
+        normal_font.draw(280, 35, message, (215, 241, 255))
+
     def update(self, dt):
+        self.clear_banner_remaining = max(0.0, self.clear_banner_remaining - dt)
+        self.portal.update(dt)
         # 화면 밖에서도 몬스터의 이동과 상태 갱신을 계속한다.
         for slime in self.slimes:
             slime.update(dt)
@@ -182,6 +225,7 @@ class Stage:
         for platform in self.platforms:
             platform.draw(self.platform_image, camera)
         self.draw_plants(camera)
+        self.portal.draw(camera)
         for slime in self.slimes:
             if camera.visible(slime.x - slime.width, slime.x + slime.width):
                 slime.draw(camera.x)
