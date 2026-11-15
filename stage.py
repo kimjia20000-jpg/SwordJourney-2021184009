@@ -6,6 +6,7 @@ from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, GROUND_Y, PLATFORM_THICKNESS,
 )
 from slime import Slime
+from ui_theme import panel
 from portal import Portal
 
 
@@ -151,9 +152,7 @@ class Stage:
             return
         if self.clear_banner_remaining > 0:
             cx, cy = SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2
-            draw_rectangle(cx - 260, cy - 48, cx + 260, cy + 64,
-                           25, 48, 43, filled=True)
-            draw_rectangle(cx - 260, cy - 48, cx + 260, cy + 64, 170, 226, 183)
+            panel(cx - 260, cy - 48, cx + 260, cy + 64, dark=True)
             title_font.draw(cx - 150, cy + 23, "1스테이지 클리어!", (255, 229, 137))
             normal_font.draw(cx - 193, cy - 22,
                              "오른쪽 끝 출구 포탈이 열렸습니다.", (220, 247, 235))
@@ -164,7 +163,7 @@ class Stage:
                        else "닫힌 포탈 — 모든 몬스터를 처치하세요.")
         else:
             return
-        draw_rectangle(265, 84, SCREEN_WIDTH - 265, 127, 25, 43, 37, filled=True)
+        panel(265, 84, SCREEN_WIDTH - 265, 127, dark=True)
         normal_font.draw(280, 104, message, (215, 241, 255))
 
     def update(self, dt):

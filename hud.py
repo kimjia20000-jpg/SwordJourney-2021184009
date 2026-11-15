@@ -1,75 +1,99 @@
 import math
-
 from pico2d import draw_rectangle
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from skills import SKILL_DATA
 from weapons import WEAPONS
-
-
-def bar(font, label, value, maximum, y, color):
-    left, right, height = 82, 306, 20
-    font.draw(28, y + 9, label, (225, 233, 222))
-    draw_rectangle(left, y, right, y + height, 52, 62, 59, filled=True)
-    width = round((right - left) * max(0.0, min(1.0, value / maximum)))
-    if width > 0:
-        draw_rectangle(left, y, left + width, y + height, *color, filled=True)
-    font.draw(left + 8, y + 10, f"{int(value)} / {maximum}", (255, 255, 255))
+from ui_theme import panel, title, text, rect, slot, keycap, meter, INK, MUTED, NAVY, GOLD, WHITE
 
 
 def draw_player_status(player, stage, font):
-    top = SCREEN_HEIGHT - 16
-    draw_rectangle(16, top - 183, 322, top, 25, 40, 35, filled=True)
-    draw_rectangle(16, top - 183, 322, top, 105, 141, 116)
-    font.draw(28, top - 22, f"레벨 {player.level}  ·  모험가", (255, 227, 145))
-    bar(font, "체력", player.hp, player.max_hp, top - 65, (195, 67, 63))
-    bar(font, "마나", player.mp, player.max_mp, top - 96, (49, 112, 196))
-    bar(font, "경험", player.exp, player.exp_to_next, top - 127, (155, 125, 45))
-    font.draw(28, top - 160,
-              f"남은 몬스터  {stage.remaining_monsters} / {stage.initial_monster_count}",
-              (235, 239, 219))
-
+    panel(16, 550, 354, 704)
+    # 첫 대기 프레임에서 얼굴과 상체를 잘라 초상화로 사용한다.
+    slot(28, 600, 76)
+    player.image.clip_draw(103, player.image.h - 217, 166, 204, 66, 639, 65, 74)
+    rect(30, 580, 102, 600, GOLD)
+    rect(32, 582, 100, 598, NAVY)
+    text(font, 38, 590, f'Lv. {player.level}', WHITE)
+    text(font, 116, 682, '모험가', INK)
+    text(font, 203, 682, f'공격력 {player.attack_power}', MUTED)
+    for label, value, maximum, y, color in (
+        ('HP', player.hp, player.max_hp, 649, (208, 66, 86)),
+        ('MP', player.mp, player.max_mp, 621, (54, 120, 207)),
+    ):
+        meter(116, y, 224, 23, value, maximum, color)
+        text(font, 124, y + 12, label, WHITE)
+        text(font, 193, y + 12, f'{int(value)} / {maximum}', WHITE)
+    meter(116, 600, 224, 13, player.exp, player.exp_to_next, (193, 151, 61))
+    text(font, 116, 586, f'EXP  {player.exp} / {player.exp_to_next}', MUTED)
     weapon = WEAPONS[player.equipped_weapon]
-    draw_rectangle(16, top - 233, 322, top - 192, 25, 40, 35, filled=True)
-    font.draw(28, top - 214, f'{weapon["name"]} · 공격력 {weapon["damage"]}', (231, 215, 159))
-    if player.pending_weapon is not None:
-        draw_rectangle(16, top - 272, 322, top - 239, 25, 40, 35, filled=True)
-        font.draw(28, top - 256, f'예약: {WEAPONS[player.pending_weapon]["name"]}', (145, 217, 248))
+    text(font, 30, 565, weapon['name'], INK)
+    status = '교체 예약 중' if player.pending_weapon else weapon['speed_label'] + ' · ' + weapon['range_label']
+    text(font, 220, 565, status, MUTED)
+
+
+def draw_stage_header(stage, player, font):
+    panel(452, 645, 828, 704, dark=True)
+    text(font, 473, 683, 'STAGE 01', (237, 202, 126))
+    text(font, 584, 683, stage.zone_name(player.x), WHITE)
+    remaining = stage.remaining_monsters
+    label = f'몬스터 처치  {stage.initial_monster_count - remaining} / {stage.initial_monster_count}' if remaining else '지역 정복 완료 · 출구 포탈 개방'
+    text(font, 487, 660, label, (202, 211, 225))
 
 
 def draw_skill_bar(player, font):
-    # 바닥 높이 80보다 아래에 배치해 전투 화면을 가리지 않는다.
+    panel(342, 6, 1008, 74)
     for index, (name, spec) in enumerate(SKILL_DATA.items()):
-        left, bottom = 374 + index * 266, 8
-        right, top = left + 250, bottom + 62
-        unlocked = player.level >= spec["level"]
+        l, b = 354 + index * 190, 14
+        unlocked = player.level >= spec['level']
         cooldown = player.skills.cooldowns[name]
-        color = (103, 185, 219) if unlocked else (92, 104, 98)
-        draw_rectangle(left, bottom, right, top, 24, 39, 36, filled=True)
-        draw_rectangle(left, bottom, right, top, *color)
-        player.skills.draw_sprite(name, left + 32, bottom + 34, 36, 44)
-        font.draw(left + 59, bottom + 43, f'{spec["key"]}  {spec["name"]}',
-                  (238, 245, 242) if unlocked else (150, 160, 153))
+        ready = unlocked and cooldown <= 0 and player.mp >= spec['mana']
+        slot(l, b, 52, hover=ready)
+        player.skills.draw_sprite(name, l + 26, b + 29, 32, 37)
+        keycap(font, l - 2, b - 1, spec['key'])
+        text(font, l + 60, b + 37, spec['name'], INK if unlocked else MUTED)
         if not unlocked:
-            status = f'{spec["level"]}레벨 해금'
+            status = f'Lv. {spec["level"]} 해금'
         elif cooldown > 0:
-            status = f'대기 {math.ceil(cooldown * 10) / 10:.1f}초'
-        elif player.mp + 1e-9 < spec["mana"]:
-            status = f'마나 부족 ({spec["mana"]})'
+            status = f'대기 {cooldown:.1f}초'
+        elif not ready:
+            status = '마나 부족'
         else:
-            status = f'마나 {spec["mana"]} · 사용 가능'
-        font.draw(left + 59, bottom + 18, status, (168, 215, 240) if unlocked else (150, 160, 153))
+            status = f'MP {spec["mana"]} · 준비'
+        text(font, l + 60, b + 14, status, (43, 105, 155) if ready else MUTED)
+        if cooldown > 0:
+            meter(l + 3, b + 23, 46, 6, cooldown, spec['cooldown'], (117, 156, 206))
+        if not unlocked:
+            text(font, l + 24, b + 9, str(spec['level']), (219, 207, 178))
+
+
+def draw_skill_window(player, font):
+    if not player.inventory.skill_visible or not player.alive:
+        return
+    panel(22, 124, 360, 425)
+    title(font, 22, 360, 425, '전투 스킬', 'K 닫기')
+    text(font, 40, 371, '모든 검 공통 · 레벨에 따라 해금', MUTED)
+    for i, (name, spec) in enumerate(SKILL_DATA.items()):
+        y = 260 - i * 106
+        slot(40, y + 14, 56)
+        player.skills.draw_sprite(name, 68, y + 44, 34, 40)
+        keycap(font, 39, y + 12, spec['key'])
+        unlocked = player.level >= spec['level']
+        text(font, 109, y + 65, spec['name'], INK)
+        text(font, 109, y + 42, f'Lv. {spec["level"]}  ·  MP {spec["mana"]}  ·  재사용 {spec["cooldown"]:g}초', MUTED)
+        damage = round(player.attack_power * spec['multiplier'])
+        text(font, 109, y + 19, f'피해 {damage}  ·  ' + ('해금 완료' if unlocked else '아직 잠긴 스킬'), (48, 111, 150) if unlocked else MUTED)
+    text(font, 40, 140, '장착한 검에 따라 위력과 범위가 달라져요.', MUTED)
 
 
 def draw_messages(player, font):
     if not player.alive:
         return
     if player.level_notice_remaining > 0:
-        draw_rectangle(400, SCREEN_HEIGHT - 104, 880, SCREEN_HEIGHT - 63,
-                       40, 49, 29, filled=True)
-        font.draw(418, SCREEN_HEIGHT - 84, player.level_notice, (255, 232, 137))
+        panel(432, 592, 848, 633, dark=True)
+        text(font, 453, 613, player.level_notice, (255, 225, 137))
     if player.notice_remaining > 0:
-        draw_rectangle(400, 144, 910, 185, 25, 40, 35, filled=True)
-        font.draw(418, 164, player.notice, (210, 239, 251))
+        panel(392, 134, 908, 173, dark=True)
+        text(font, 410, 154, player.notice, WHITE)
 
 
 def draw_level_effect(player, camera_x):

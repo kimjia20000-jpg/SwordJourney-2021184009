@@ -21,8 +21,9 @@ from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from player import Player
 from stage import Stage
 from camera import Camera
+from ui_theme import panel
 from minimap import Minimap
-from hud import draw_player_status, draw_skill_bar, draw_messages, draw_level_effect
+from hud import draw_player_status, draw_skill_bar, draw_messages, draw_level_effect, draw_stage_header, draw_skill_window
 
 
 def load_ui_fonts():
@@ -37,7 +38,7 @@ def load_ui_fonts():
             f"한글 표시용 글꼴을 찾지 못했습니다: {font_path}"
         )
 
-    normal_font = load_font(str(font_path), 20)
+    normal_font = load_font(str(font_path), 16)
     title_font = load_font(str(font_path), 38)
 
     return normal_font, title_font
@@ -103,22 +104,7 @@ def draw_game_over(normal_font, title_font):
     center_x = SCREEN_WIDTH / 2
     center_y = SCREEN_HEIGHT / 2
 
-    draw_rectangle(
-        center_x - 240,
-        center_y - 105,
-        center_x + 240,
-        center_y + 105,
-        25, 30, 35,
-        filled=True
-    )
-
-    draw_rectangle(
-        center_x - 240,
-        center_y - 105,
-        center_x + 240,
-        center_y + 105,
-        220, 200, 130
-    )
+    panel(center_x - 240, center_y - 105, center_x + 240, center_y + 105, dark=True)
 
     title_font.draw(
         center_x - 90,
@@ -159,13 +145,11 @@ def draw(stage, player, camera, minimap, normal_font, title_font):
     draw_player_status(player, stage, normal_font)
     draw_skill_bar(player, normal_font)
     draw_messages(player, normal_font)
-    draw_rectangle(430, SCREEN_HEIGHT - 50, 850, SCREEN_HEIGHT - 15,
-                   27, 36, 31, filled=True)
-    normal_font.draw(446, SCREEN_HEIGHT - 39,
-                     f"1스테이지  ·  {stage.zone_name(player.x)}", (240, 240, 220))
+    draw_stage_header(stage, player, normal_font)
     minimap.draw(stage, player, camera, normal_font)
 
     stage.draw_status(player, normal_font, title_font)
+    draw_skill_window(player, normal_font)
     player.inventory.draw(normal_font)
 
     if not player.alive:

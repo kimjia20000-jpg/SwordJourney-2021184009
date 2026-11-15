@@ -3,10 +3,11 @@ from pathlib import Path
 from pico2d import (
     load_image, draw_rectangle, get_time,
     SDL_KEYDOWN, SDL_KEYUP, SDL_MOUSEMOTION, SDL_MOUSEBUTTONDOWN,
-    SDL_BUTTON_LEFT, SDLK_i, SDLK_1, SDLK_2,
+    SDL_BUTTON_LEFT, SDLK_i, SDLK_1, SDLK_2, SDLK_k,
 )
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from weapons import WEAPONS
+from ui_theme import panel, title, text, rect, slot, keycap, INK, MUTED, WHITE, GOLD, NAVY
 
 
 IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "images" / "potion_icons.png"
@@ -26,14 +27,15 @@ class Inventory:
         self.player = player
         self.image = load_image(str(IMAGE_PATH))
         self.visible = False
+        self.skill_visible = False
         self.counts = {"hp_potion": 3, "mp_potion": 3}
         # 같은 포션은 한 슬롯에 쌓인다. 나머지는 이후 아이템용 빈 슬롯.
         self.slots = ["hp_potion", "mp_potion", "adventurer_sword", "forest_sword",
                       "heavy_sword", None, None, None]
-        self.left = SCREEN_WIDTH - 366
+        self.left = SCREEN_WIDTH - 346
         self.right = SCREEN_WIDTH - 16
-        self.bottom = 88
-        self.top = 362
+        self.bottom = 98
+        self.top = 386
         self.mouse_x = -1
         self.mouse_y = -1
         self.keys_pressed = set()
@@ -45,8 +47,8 @@ class Inventory:
 
     def slot_rect(self, index):
         column, row = index % 4, index // 4
-        left = self.left + 24 + column * 76
-        bottom = self.top - 130 - row * 76
+        left = self.left + 22 + column * 74
+        bottom = self.top - 140 - row * 74
         return left, bottom, left + 64, bottom + 64
 
     def slot_at(self, x, y):
@@ -64,6 +66,7 @@ class Inventory:
 
     def close(self):
         self.visible = False
+        self.skill_visible = False
         self.reset_click()
 
     def use_item(self, item_id):
@@ -93,7 +96,7 @@ class Inventory:
     def handle_event(self, event):
         if not self.player.alive:
             return False
-        watched_keys = (SDLK_i, SDLK_1, SDLK_2)
+        watched_keys = (SDLK_i, SDLK_1, SDLK_2, SDLK_k)
         if event.type == SDL_KEYUP and event.key in watched_keys:
             self.keys_pressed.discard(event.key)
             return True
@@ -105,6 +108,8 @@ class Inventory:
             self.reset_click()
             if event.key == SDLK_i:
                 self.visible = not self.visible
+            elif event.key == SDLK_k:
+                self.skill_visible = not self.skill_visible
             elif event.key == SDLK_1:
                 self.use_item("hp_potion")
             else:
@@ -148,52 +153,40 @@ class Inventory:
                              right - left, bottom - top, x, y, width, height)
 
     def draw_quickbar(self, font):
-        # 스킬 슬롯 오른쪽에 항상 남은 포션 수와 I키 안내를 표시한다.
         for index, item_id in enumerate(ITEMS):
-            left, bottom = 906 + index * 120, 8
-            draw_rectangle(left, bottom, left + 112, bottom + 62,
-                           24, 39, 36, filled=True)
-            draw_rectangle(left, bottom, left + 112, bottom + 62, *ITEMS[item_id]["color"])
-            self.draw_icon(item_id, left + 27, bottom + 33, 40)
-            font.draw(left + 51, bottom + 43, ITEMS[item_id]["key"] + " 키", (231, 238, 229))
-            font.draw(left + 51, bottom + 18, f'{self.counts[item_id]}개', (239, 228, 175))
-        font.draw(1158, 39, "I 가방", (224, 235, 214))
+            l, b = 742 + index * 65, 14
+            slot(l, b, 52)
+            self.draw_icon(item_id, l + 27, b + 29, 37)
+            keycap(font, l - 2, b - 1, ITEMS[item_id]['key'])
+            text(font, l + 36, b + 10, self.counts[item_id], WHITE)
+        text(font, 882, 49, 'I  인벤토리', INK)
+        text(font, 882, 26, 'K  스킬 창', MUTED)
 
     def draw(self, font):
         self.draw_quickbar(font)
         if not self.visible or not self.player.alive:
             return
-        draw_rectangle(self.left, self.bottom, self.right, self.top,
-                       24, 39, 36, filled=True)
-        draw_rectangle(self.left, self.bottom, self.right, self.top, 154, 179, 135)
-        font.draw(self.left + 16, self.top - 24, "인벤토리", (255, 232, 161))
-        font.draw(self.right - 102, self.top - 24, "I 닫기", (203, 218, 198))
-        font.draw(self.left + 16, self.top - 54, "아이템에 마우스를 올려 보세요.", (177, 195, 183))
+        panel(self.left, self.bottom, self.right, self.top)
+        title(font, self.left, self.right, self.top, '인벤토리', 'I 닫기')
+        text(font, self.left + 22, self.top - 56, '소지품', INK)
+        text(font, self.right - 99, self.top - 56,
+             f'{sum(i is not None for i in self.slots)} / {len(self.slots)} 칸', MUTED)
         hovered = self.slot_at(self.mouse_x, self.mouse_y)
         for index, item_id in enumerate(self.slots):
             left, bottom, right, top = self.slot_rect(index)
-            draw_rectangle(left, bottom, right, top, 38, 55, 48, filled=True)
             equipped = item_id == self.player.equipped_weapon
             pending = item_id is not None and item_id == self.player.pending_weapon
-            border = ((255, 210, 80) if equipped else (100, 205, 255) if pending
-                      else (195, 216, 187) if index == hovered else (85, 109, 91))
-            draw_rectangle(left, bottom, right, top, *border)
-            if equipped or pending:
-                draw_rectangle(left + 1, bottom + 1, right - 1, top - 1, *border)
+            slot(left, bottom, 64, equipped, pending, index == hovered)
             if item_id is not None:
-                self.draw_icon(item_id, (left + right) / 2, bottom + 34)
+                self.draw_icon(item_id, (left + right) / 2, bottom + 36, 42)
                 if item_id in ITEMS:
-                    count = self.counts[item_id]
-                    draw_rectangle(right - 24, bottom + 2, right - 2, bottom + 22,
-                                   19, 29, 26, filled=True)
-                    font.draw(right - 21, bottom + 11, str(count),
-                              (255, 238, 179) if count else (157, 164, 157))
+                    text(font, right - 17, bottom + 12, self.counts[item_id], WHITE)
                 elif equipped or pending:
-                    draw_rectangle(left + 8, bottom + 2, right - 8, bottom + 23,
-                                   19, 29, 26, filled=True)
-                    font.draw(left + 12, bottom + 12, "장착" if equipped else "예약", border)
-        font.draw(self.left + 16, self.bottom + 42, "더블클릭: 검 장착 / 포션 사용", (221, 231, 219))
-        font.draw(self.left + 16, self.bottom + 20, "1 체력 포션  /  2 마나 포션", (183, 213, 229))
+                    rect(left + 4, bottom + 3, right - 4, bottom + 20, NAVY)
+                    text(font, left + 16, bottom + 12, '장착' if equipped else '예약',
+                         (255, 210, 80) if equipped else (100, 205, 255))
+        text(font, self.left + 22, self.bottom + 49, '더블클릭  ·  검 장착 / 포션 사용', INK)
+        text(font, self.left + 22, self.bottom + 25, '장착 중에는 금색 테두리가 표시돼요.', MUTED)
         if hovered is not None and self.slots[hovered] is not None:
             self.draw_tooltip(self.slots[hovered], font)
 
@@ -202,39 +195,36 @@ class Inventory:
             self.draw_weapon_tooltip(item_id, font)
             return
         spec = ITEMS[item_id]
-        # 가방 왼쪽에 고정해 화면 밖으로 나가거나 슬롯을 가리지 않는다.
         left, right = self.left - 260, self.left - 12
-        bottom, top = self.top - 148, self.top
-        draw_rectangle(left, bottom, right, top, 18, 31, 30, filled=True)
-        draw_rectangle(left, bottom, right, top, *spec["color"])
-        font.draw(left + 12, top - 24, spec["name"], spec["color"])
-        resource_name = "체력" if spec["stat"] == "hp" else "마나"
-        font.draw(left + 12, top - 54, f'{resource_name} {spec["amount"]} 회복', (239, 239, 221))
-        font.draw(left + 12, top - 82, f'보유 수량: {self.counts[item_id]}개', (219, 228, 213))
-        font.draw(left + 12, top - 110, f'{spec["key"]} 키 또는 더블클릭', (190, 218, 237))
-        font.draw(left + 12, top - 134, "가득 차면 소모하지 않음", (168, 185, 173))
+        bottom, top = self.top - 170, self.top
+        panel(left, bottom, right, top)
+        title(font, left, right, top, spec['name'])
+        resource_name = '체력' if spec['stat'] == 'hp' else '마나'
+        text(font, left + 16, top - 57, f'{resource_name} {spec["amount"]} 회복', INK)
+        text(font, left + 16, top - 83, f'보유 수량: {self.counts[item_id]}개', INK)
+        text(font, left + 16, top - 112, f'{spec["key"]} 키 또는 더블클릭', MUTED)
+        text(font, left + 16, top - 143, '가득 차면 소모하지 않음', MUTED)
 
     def draw_weapon_tooltip(self, weapon_id, font):
         spec = WEAPONS[weapon_id]
-        left, right = self.left - 298, self.left - 12
-        bottom, top = self.top - 238, self.top
-        draw_rectangle(left, bottom, right, top, 18, 31, 30, filled=True)
-        draw_rectangle(left, bottom, right, top, 236, 204, 117)
-        font.draw(left + 12, top - 24, spec["name"], (255, 226, 144))
+        left, right = self.left - 286, self.left - 12
+        bottom, top = self.top - 246, self.top
+        panel(left, bottom, right, top)
+        title(font, left, right, top, spec['name'])
         lines = [
             f'공격력  {spec["damage"]}',
             f'공격 속도  {spec["speed_label"]}',
             f'공격 범위  {spec["range_label"]} ({spec["reach"]})',
             f'강화 베기 피해  {spec["damage"] * 2}',
             f'검기 발사 피해  {round(spec["damage"] * 1.5)}',
-            "현재 장착 중" if weapon_id == self.player.equipped_weapon else
-            "동작 종료 후 장착 예약" if weapon_id == self.player.pending_weapon else
-            "더블클릭으로 장착",
-            "공통 스킬 · 크리티컬 없음",
+            '현재 장착 중' if weapon_id == self.player.equipped_weapon else
+            '동작 종료 후 장착 예약' if weapon_id == self.player.pending_weapon else
+            '더블클릭으로 장착',
+            '공통 스킬 · 크리티컬 없음',
         ]
         for index, line in enumerate(lines):
-            font.draw(left + 12, top - 55 - index * 26, line,
-                      (223, 235, 217) if index < 5 else (174, 213, 236))
+            text(font, left + 16, top - 58 - index * 27, line,
+                 INK if index < 5 else (53, 109, 151))
 
     def draw_feedback(self, camera_x, font):
         if not self.player.alive or self.feedback_remaining <= 0:

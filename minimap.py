@@ -1,21 +1,22 @@
 from pico2d import draw_rectangle
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from ui_theme import panel, title, text, rect, MUTED
 
 
 class Minimap:
     """맵 전체와 현재 화면 범위를 고정 UI 좌표로 표시한다."""
 
     def __init__(self):
-        self.left = SCREEN_WIDTH - 336
+        self.left = SCREEN_WIDTH - 300
         self.right = SCREEN_WIDTH - 16
         self.top = SCREEN_HEIGHT - 16
-        self.bottom = self.top - 128
+        self.bottom = self.top - 139
 
     def bounds(self, stage):
-        scale = min(296 / stage.width, 78 / stage.height)
+        scale = min(258 / stage.width, 68 / stage.height)
         width, height = stage.width * scale, stage.height * scale
         left = (self.left + self.right - width) / 2
-        bottom = self.bottom + 12 + (78 - height) / 2
+        bottom = self.bottom + 31 + (68 - height) / 2
         return left, bottom, scale
 
     def project(self, stage, x, y):
@@ -23,19 +24,23 @@ class Minimap:
         return left + x * scale, bottom + y * scale
 
     def draw(self, stage, player, camera, font):
-        draw_rectangle(self.left, self.bottom, self.right, self.top,
-                       25, 43, 37, filled=True)
-        draw_rectangle(self.left, self.bottom, self.right, self.top, 160, 183, 139)
-        font.draw(self.left + 12, self.top - 22, "1스테이지 · 전체 지도", (240, 240, 220))
+        panel(self.left, self.bottom, self.right, self.top)
+        title(font, self.left, self.right, self.top, '전체 지도')
+        text(font, self.left + 30, self.bottom + 17, '나', MUTED)
+        text(font, self.left + 107, self.bottom + 17, '몬스터', MUTED)
+        text(font, self.left + 215, self.bottom + 17, '출구', MUTED)
+        self.draw_dot(self.left + 20, self.bottom + 17, (75, 255, 113), 2)
+        self.draw_dot(self.left + 97, self.bottom + 17, (255, 76, 76), 2)
+        self.draw_dot(self.left + 205, self.bottom + 17, (95, 216, 255), 2)
         left, bottom, scale = self.bounds(stage)
         draw_rectangle(round(left), round(bottom),
                        round(left + stage.width * scale), round(bottom + stage.height * scale),
-                       38, 63, 50, filled=True)
+                       43, 54, 78, filled=True)
         for platform in stage.platforms:
             x1, y = self.project(stage, platform.left, platform.top)
             x2, _ = self.project(stage, platform.right, platform.top)
             draw_rectangle(round(x1), round(y) - 1, round(x2), round(y),
-                           151, 173, 114, filled=True)
+                           194, 180, 143, filled=True)
         # 흰 테두리는 현재 카메라가 보여주는 월드 영역.
         x1, y1 = self.project(stage, camera.x, 0)
         x2, y2 = self.project(stage, camera.x + camera.width, stage.height)
