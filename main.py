@@ -149,6 +149,7 @@ def draw(stage, player, camera, minimap, normal_font, title_font):
     player.draw(camera.x)
     player.skills.draw(camera.x)
     draw_level_effect(player, camera.x)
+    player.inventory.draw_feedback(camera.x, normal_font)
 
     # 몬스터 체력바.
     for slime in stage.slimes:
@@ -165,6 +166,7 @@ def draw(stage, player, camera, minimap, normal_font, title_font):
     minimap.draw(stage, player, camera, normal_font)
 
     stage.draw_status(player, normal_font, title_font)
+    player.inventory.draw(normal_font)
 
     if not player.alive:
         draw_game_over(normal_font, title_font)

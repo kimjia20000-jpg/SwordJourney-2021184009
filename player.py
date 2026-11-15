@@ -10,6 +10,7 @@ from settings import (
 )
 
 from skills import SkillController, SKILL_DATA
+from inventory import Inventory
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
@@ -86,6 +87,7 @@ class Player:
         self.level_notice_remaining = 0.0
         self.skill_keys_pressed = set()
         self.skills = SkillController(self)
+        self.inventory = Inventory(self)
         self.invincible_remaining = 0.0
         self.hurt_remaining = 0.0
         self.hurt_face_direction = 1
@@ -138,6 +140,8 @@ class Player:
 
     def handle_event(self, event):
         if not self.alive:
+            return
+        if self.inventory.handle_event(event):
             return
         skill_keys = {SDLK_s: "slash", SDLK_d: "wave"}
         if event.type == SDL_KEYUP and event.key in skill_keys:
@@ -193,6 +197,7 @@ class Player:
     def update(self, dt):
         if not self.alive:
             return
+        self.inventory.update(dt)
         self.mp = min(float(self.max_mp), self.mp + 2.0 * dt)
         self.notice_remaining = max(0.0, self.notice_remaining - dt)
         self.level_notice_remaining = max(0.0, self.level_notice_remaining - dt)
@@ -346,6 +351,8 @@ class Player:
         self.velocity_y = 0.0
         self.cancel_attack()
         self.skills.clear_on_death()
+        self.inventory.close()
+        self.inventory.keys_pressed.clear()
         self.skill_keys_pressed.clear()
         self.motion = "IDLE"
         self.frame = 0.0
