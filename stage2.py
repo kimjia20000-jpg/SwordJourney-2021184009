@@ -24,14 +24,19 @@ class DeepForestStage(Stage):
             (4050,4300,165),(4220,4580,250),(4380,4730,335),
             (4570,4950,420),(4830,5075,335),(4900,5120,250)]
         self.platforms = [Platform(0,self.width,80,80)] + [Platform(*p) for p in layouts]
+        self.exit_platform = self.platforms[-1]
+        # 지상 80 → 계단 165 → 출구 250. 양쪽 끝에서도 직접 올라갈 수 있다.
+        self.platforms.append(Platform(4780, 5120, 165))
         self.routes = PlatformRoutes(self.platforms)
         self.packs = [WolfPack(self,self.platforms[0],760),
                       WolfPack(self,self.platforms[9],2000),
                       WolfPack(self,self.platforms[0],3180),
-                      WolfPack(self,self.platforms[24],4540)]
+                      WolfPack(self,self.platforms[24],4540),
+                      WolfPack(self,self.platforms[12],2520),
+                      WolfPack(self,self.platforms[18],3660)]
         self.monsters = [wolf for pack in self.packs for wolf in pack.members]
         self.initial_monster_count = len(self.monsters)
-        self.portal = Portal(self.width-110,self.platforms[-1].top)
+        self.portal = Portal(self.width-110,self.exit_platform.top)
         self.rewards = {'heavy_sword':1,'hp_potion':3,'mp_potion':3}
         self.reward_labels = (('heavy_sword','묵직한 대검 ×1'),('hp_potion','체력 포션 ×3'),('mp_potion','마나 포션 ×3'))
         self.reward_equip_hint = 'I 가방 → 대검 더블클릭 장착 · 오른쪽 출구 개방'

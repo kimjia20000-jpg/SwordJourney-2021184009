@@ -1,4 +1,3 @@
-import math
 from pico2d import draw_rectangle
 from navigation import JUMP, GRAVITY
 
@@ -13,6 +12,11 @@ class WolfPack:
         self.mode = 'PATROL'
         self.memory = 0.0
         self.elapsed = 0.0
+        self.patrol_offset = 0.0
+        self.patrol_direction = 1
+        self.patrol_range = min(75, center - 95 - platform.left - 44,
+                                platform.right - 44 - center - 95)
+        self.patrol_range = max(8, self.patrol_range)
         self.members = [Wolf(self, center + offset, index) for index, offset in enumerate((-95, 0, 95))]
 
     def alert(self):
@@ -35,6 +39,12 @@ class WolfPack:
         elif self.mode == 'RETURN':
             if all(w.on_ground and w.platform is self.home_platform and abs(w.x - w.home_x) < 14 for w in living):
                 self.mode = 'PATROL'
+        if self.mode == 'PATROL':
+            # 움직이는 목표를 따라잡았다 멈추지 않도록 일정한 속도로 함께 순찰한다.
+            self.patrol_offset += self.patrol_direction * 38 * dt
+            if abs(self.patrol_offset) >= self.patrol_range:
+                self.patrol_offset = max(-self.patrol_range, min(self.patrol_range, self.patrol_offset))
+                self.patrol_direction *= -1
         for wolf in living:
             wolf.update(dt, player)
 
@@ -83,7 +93,7 @@ class Wolf:
 
     def move_toward(self, x, speed, dt):
         delta = x - self.x
-        if abs(delta) > 2:
+        if abs(delta) > 0.0001:
             self.direction = 1 if delta > 0 else -1
             step = min(abs(delta), speed * dt)
             self.x += self.direction * step
@@ -125,7 +135,7 @@ class Wolf:
         mode = self.pack.mode
         if mode == 'PATROL':
             target_platform = self.pack.home_platform
-            offset = math.sin(self.pack.elapsed * .55) * 75
+            offset = self.pack.patrol_offset
             target_x = self.home_x + offset
             speed = 62
         elif mode == 'RETURN':
@@ -165,10 +175,24 @@ class Wolf:
             self.ignore_time = .35
         self.on_ground = False
 
+    def animation_index(self):
+        if self.hurt_remaining > 0:
+            return 5
+        if self.attack_time > 0:
+            return 4
+        if not self.on_ground:
+            return 3
+        if self.moving:
+            if self.pack.mode == 'PATROL':
+                # 높이가 비슷한 접지 자세만 느리게 반복하여 걷기를 표현한다.
+                return (1, 2)[int(self.elapsed * 6) % 2]
+            return 1 + int(self.elapsed * 10) % 3
+        return 0
+
     def draw(self, camera_x=0):
         if not self.alive:
             return
-        index = 5 if self.hurt_remaining > 0 else 4 if self.attack_time > 0 else (1 + int(self.elapsed * 10) % 3) if self.moving or not self.on_ground else 0
+        index = self.animation_index()
         left, top, right, bottom = FRAMES[index]
         sx, sy = self.image.w / 1536, self.image.h / 1024
         left, right, top, bottom = round(left*sx), round(right*sx), round(top*sy), round(bottom*sy)
