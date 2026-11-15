@@ -2,6 +2,7 @@ import math
 from pathlib import Path
 
 from pico2d import load_image, draw_rectangle
+from weapons import WEAPONS
 
 
 # 모든 검이 공통으로 사용하는 스킬. 피해는 현재 기본 공격력에 비례한다.
@@ -22,13 +23,13 @@ def overlap(a, b):
 class SwordWave:
     """발사 방향을 유지하는 관통 검기. 몬스터별 한 번만 피해를 준다."""
 
-    def __init__(self, x, y, direction, damage):
+    def __init__(self, x, y, direction, damage, scale=1.0):
         self.x, self.y = x, y
         self.direction = direction
         self.damage = damage
         self.speed = 620.0
         self.remaining_distance = 520.0
-        self.width, self.height = 78.0, 60.0
+        self.width, self.height = 78.0 * scale, 60.0 * scale
         self.alive = True
         self.hit_targets = set()
 
@@ -63,6 +64,7 @@ class SkillController:
         self.hit_targets = set()
         self.wave_launched = False
         self.cast_damage = 0
+        self.cast_scale = 1.0
         self.waves = []
         self.hit_effects = []
 
@@ -92,6 +94,7 @@ class SkillController:
             p.face_direction = input_direction
         self.direction = p.face_direction
         self.cast_damage = round(p.attack_power * spec["multiplier"])
+        self.cast_scale = WEAPONS[p.equipped_weapon]["skill_scale"]
         self.hit_targets.clear()
         self.wave_launched = False
         return True
@@ -117,7 +120,7 @@ class SkillController:
         # 그리는 크기와 판정 크기를 같은 계산에서 가져온다.
         p = self.player
         phase = max(0.0, min(1.0, (self.progress - 0.20) / 0.60))
-        scale = 0.85 + 0.15 * math.sin(math.pi * phase)
+        scale = (0.85 + 0.15 * math.sin(math.pi * phase)) * self.cast_scale
         width, height = 108.0 * scale, 112.0 * scale
         center_x = p.x + self.direction * (12 + width / 2)
         center_y = p.y + 54 - 10 * phase
@@ -151,7 +154,7 @@ class SkillController:
             elif self.active == "wave" and self.progress >= .35 and not self.wave_launched:
                 self.waves.append(SwordWave(
                     p.x + self.direction * 48, p.y + 42,
-                    self.direction, self.cast_damage,
+                    self.direction, self.cast_damage, self.cast_scale,
                 ))
                 self.wave_launched = True
             if self.progress >= 1.0:

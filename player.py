@@ -11,6 +11,7 @@ from settings import (
 
 from skills import SkillController, SKILL_DATA
 from inventory import Inventory
+from weapons import WEAPONS, DEFAULT_WEAPON, WeaponArt
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
@@ -80,7 +81,13 @@ class Player:
         self.exp = 0
         self.max_mp = 50
         self.mp = float(self.max_mp)
-        self.attack_power = BASIC_ATTACK_DAMAGE
+        self.equipped_weapon = DEFAULT_WEAPON
+        self.owned_weapons = set(WEAPONS)
+        self.pending_weapon = None
+        self.weapon_art = WeaponArt()
+        self.attack_weapon = DEFAULT_WEAPON
+        self.attack_duration = WEAPONS[DEFAULT_WEAPON]["duration"]
+        self.attack_damage = WEAPONS[DEFAULT_WEAPON]["damage"]
         self.notice = ""
         self.notice_remaining = 0.0
         self.level_notice = ""
@@ -96,6 +103,34 @@ class Player:
             right - left for left, top, right, bottom
             in IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
         ) * PLAYER_DRAW_SCALE / 2
+
+    @property
+    def attack_power(self):
+        return WEAPONS[self.equipped_weapon]["damage"]
+
+    def request_equip(self, weapon_id):
+        if not self.alive or weapon_id not in self.owned_weapons:
+            return False
+        if weapon_id == self.equipped_weapon:
+            self.pending_weapon = None
+            self.show_notice("현재 장착한 검입니다. 교체 예약을 취소했어요.")
+            return True
+        if self.attacking or self.skills.active is not None or self.hurt_remaining > 0:
+            self.pending_weapon = weapon_id
+            self.show_notice(f'{WEAPONS[weapon_id]["name"]}: 동작 종료 후 장착')
+        else:
+            self.equip_now(weapon_id)
+        return True
+
+    def equip_now(self, weapon_id):
+        self.equipped_weapon = weapon_id
+        self.pending_weapon = None
+        self.show_notice(f'{WEAPONS[weapon_id]["name"]} 장착')
+
+    def apply_pending_weapon(self):
+        if (self.alive and self.pending_weapon is not None and not self.attacking
+                and self.skills.active is None and self.hurt_remaining <= 0):
+            self.equip_now(self.pending_weapon)
 
     @property
     def exp_to_next(self):
@@ -184,6 +219,9 @@ class Player:
         input_direction = int(self.right_pressed) - int(self.left_pressed)
         if input_direction:
             self.face_direction = input_direction
+        self.attack_weapon = self.equipped_weapon
+        self.attack_duration = WEAPONS[self.attack_weapon]["duration"]
+        self.attack_damage = WEAPONS[self.attack_weapon]["damage"]
         self.attacking = True
         self.attack_elapsed = 0.0
         self.attack_direction = self.face_direction
@@ -210,7 +248,9 @@ class Player:
             if self.hurt_remaining <= 0:
                 self.knockback_velocity_x = 0.0
                 self.frame = 0.0
+                self.apply_pending_weapon()
             return
+        self.apply_pending_weapon()
         self.update_motion_animation(dt)
         self.update_attack(dt)
         self.check_attack_hits()
@@ -271,22 +311,24 @@ class Player:
     def update_attack(self, dt):
         if self.attacking:
             self.attack_elapsed += dt
-            if self.attack_elapsed >= ATTACK_DURATION:
+            if self.attack_elapsed >= self.attack_duration:
                 self.attacking = False
                 self.attack_elapsed = 0.0
+        self.apply_pending_weapon()
         if not self.attacking and self.attack_pressed:
             self.start_attack()
 
     def get_attack_box(self):
         if not self.attacking:
             return None
-        progress = self.attack_elapsed / ATTACK_DURATION
+        progress = self.attack_elapsed / self.attack_duration
         if not 0.25 <= progress < 0.75:
             return None
+        spec = WEAPONS[self.attack_weapon]
         if progress < 0.5:
-            near_x, far_x, bottom_y, top_y = 4, 44, 20, 65
+            near_x, far_x, bottom_y, top_y = 4, spec["reach"] - 4, 20, 65 + spec["height_bonus"]
         else:
-            near_x, far_x, bottom_y, top_y = 4, 48, 4, 40
+            near_x, far_x, bottom_y, top_y = 4, spec["reach"], 4, 40 + spec["height_bonus"]
         if self.attack_direction == 1:
             left, right = self.x + near_x, self.x + far_x
         else:
@@ -301,7 +343,7 @@ class Player:
             if not slime.alive or slime in self.hit_targets:
                 continue
             if rectangles_overlap(box, slime.get_body_box()):
-                if self.deal_damage(slime, self.attack_power, self.attack_direction):
+                if self.deal_damage(slime, self.attack_damage, self.attack_direction):
                     self.hit_targets.add(slime)
 
     def get_body_box(self):
@@ -342,6 +384,7 @@ class Player:
 
     def die(self):
         self.alive = False
+        self.pending_weapon = None
         self.invincible_remaining = 0.0
         self.hurt_remaining = 0.0
         self.knockback_velocity_x = 0.0
@@ -368,7 +411,7 @@ class Player:
             index = min(int(self.skills.progress * len(ATTACK_FRAMES)), len(ATTACK_FRAMES) - 1)
             rect, direction = ATTACK_FRAMES[index], self.skills.direction
         elif self.attacking:
-            index = min(int(self.attack_elapsed / ATTACK_DURATION * len(ATTACK_FRAMES)),
+            index = min(int(self.attack_elapsed / self.attack_duration * len(ATTACK_FRAMES)),
                         len(ATTACK_FRAMES) - 1)
             rect, direction = ATTACK_FRAMES[index], self.attack_direction
         else:
@@ -378,6 +421,7 @@ class Player:
         width, height = right - left, bottom - top
         self.draw_image(self.image, rect, direction,
                         width * PLAYER_DRAW_SCALE, height * PLAYER_DRAW_SCALE, camera_x)
+        self.weapon_art.draw_held(self, rect, direction, PLAYER_DRAW_SCALE, camera_x)
 
     def draw_hurt(self, camera_x=0.0):
         left, top, right, bottom = self.hurt_rect
@@ -385,6 +429,8 @@ class Player:
         draw_width = draw_height * (right - left) / (bottom - top)
         self.draw_image(self.hurt_image, self.hurt_rect, self.hurt_face_direction,
                         draw_width, draw_height, camera_x)
+        self.weapon_art.draw_held(self, self.hurt_rect, self.hurt_face_direction,
+                                  draw_height / (bottom - top), camera_x, hurt=True)
 
     def draw_image(self, image, rect, direction, width, height, camera_x):
         left, top, right, bottom = rect

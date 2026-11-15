@@ -3,6 +3,7 @@ import math
 from pico2d import draw_rectangle
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from skills import SKILL_DATA
+from weapons import WEAPONS
 
 
 def bar(font, label, value, maximum, y, color):
@@ -26,6 +27,13 @@ def draw_player_status(player, stage, font):
     font.draw(28, top - 160,
               f"남은 몬스터  {stage.remaining_monsters} / {stage.initial_monster_count}",
               (235, 239, 219))
+
+    weapon = WEAPONS[player.equipped_weapon]
+    draw_rectangle(16, top - 233, 322, top - 192, 25, 40, 35, filled=True)
+    font.draw(28, top - 214, f'{weapon["name"]} · 공격력 {weapon["damage"]}', (231, 215, 159))
+    if player.pending_weapon is not None:
+        draw_rectangle(16, top - 272, 322, top - 239, 25, 40, 35, filled=True)
+        font.draw(28, top - 256, f'예약: {WEAPONS[player.pending_weapon]["name"]}', (145, 217, 248))
 
 
 def draw_skill_bar(player, font):

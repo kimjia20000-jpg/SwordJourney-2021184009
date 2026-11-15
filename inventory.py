@@ -6,6 +6,7 @@ from pico2d import (
     SDL_BUTTON_LEFT, SDLK_i, SDLK_1, SDLK_2,
 )
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from weapons import WEAPONS
 
 
 IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "images" / "potion_icons.png"
@@ -27,7 +28,8 @@ class Inventory:
         self.visible = False
         self.counts = {"hp_potion": 3, "mp_potion": 3}
         # 같은 포션은 한 슬롯에 쌓인다. 나머지는 이후 아이템용 빈 슬롯.
-        self.slots = ["hp_potion", "mp_potion", None, None, None, None, None, None]
+        self.slots = ["hp_potion", "mp_potion", "adventurer_sword", "forest_sword",
+                      "heavy_sword", None, None, None]
         self.left = SCREEN_WIDTH - 366
         self.right = SCREEN_WIDTH - 16
         self.bottom = 88
@@ -66,6 +68,8 @@ class Inventory:
 
     def use_item(self, item_id):
         p = self.player
+        if item_id in WEAPONS:
+            return p.request_equip(item_id)
         if not p.alive or item_id not in ITEMS:
             return False
         spec = ITEMS[item_id]
@@ -132,6 +136,9 @@ class Inventory:
         self.feedback_remaining = max(0.0, self.feedback_remaining - dt)
 
     def draw_icon(self, item_id, x, y, height=44):
+        if item_id in WEAPONS:
+            self.player.weapon_art.draw_icon(item_id, x, y, height)
+            return
         left, top, right, bottom = ITEMS[item_id]["rect"]
         sx, sy = self.image.w / 1774, self.image.h / 887
         left, right = round(left * sx), round(right * sx)
@@ -166,21 +173,34 @@ class Inventory:
         for index, item_id in enumerate(self.slots):
             left, bottom, right, top = self.slot_rect(index)
             draw_rectangle(left, bottom, right, top, 38, 55, 48, filled=True)
-            border = (229, 212, 137) if index == hovered else (85, 109, 91)
+            equipped = item_id == self.player.equipped_weapon
+            pending = item_id is not None and item_id == self.player.pending_weapon
+            border = ((255, 210, 80) if equipped else (100, 205, 255) if pending
+                      else (195, 216, 187) if index == hovered else (85, 109, 91))
             draw_rectangle(left, bottom, right, top, *border)
+            if equipped or pending:
+                draw_rectangle(left + 1, bottom + 1, right - 1, top - 1, *border)
             if item_id is not None:
                 self.draw_icon(item_id, (left + right) / 2, bottom + 34)
-                count = self.counts[item_id]
-                draw_rectangle(right - 24, bottom + 2, right - 2, bottom + 22,
-                               19, 29, 26, filled=True)
-                font.draw(right - 21, bottom + 11, str(count),
-                          (255, 238, 179) if count else (157, 164, 157))
-        font.draw(self.left + 16, self.bottom + 42, "더블클릭으로 포션 사용", (221, 231, 219))
+                if item_id in ITEMS:
+                    count = self.counts[item_id]
+                    draw_rectangle(right - 24, bottom + 2, right - 2, bottom + 22,
+                                   19, 29, 26, filled=True)
+                    font.draw(right - 21, bottom + 11, str(count),
+                              (255, 238, 179) if count else (157, 164, 157))
+                elif equipped or pending:
+                    draw_rectangle(left + 8, bottom + 2, right - 8, bottom + 23,
+                                   19, 29, 26, filled=True)
+                    font.draw(left + 12, bottom + 12, "장착" if equipped else "예약", border)
+        font.draw(self.left + 16, self.bottom + 42, "더블클릭: 검 장착 / 포션 사용", (221, 231, 219))
         font.draw(self.left + 16, self.bottom + 20, "1 체력 포션  /  2 마나 포션", (183, 213, 229))
         if hovered is not None and self.slots[hovered] is not None:
             self.draw_tooltip(self.slots[hovered], font)
 
     def draw_tooltip(self, item_id, font):
+        if item_id in WEAPONS:
+            self.draw_weapon_tooltip(item_id, font)
+            return
         spec = ITEMS[item_id]
         # 가방 왼쪽에 고정해 화면 밖으로 나가거나 슬롯을 가리지 않는다.
         left, right = self.left - 260, self.left - 12
@@ -193,6 +213,28 @@ class Inventory:
         font.draw(left + 12, top - 82, f'보유 수량: {self.counts[item_id]}개', (219, 228, 213))
         font.draw(left + 12, top - 110, f'{spec["key"]} 키 또는 더블클릭', (190, 218, 237))
         font.draw(left + 12, top - 134, "가득 차면 소모하지 않음", (168, 185, 173))
+
+    def draw_weapon_tooltip(self, weapon_id, font):
+        spec = WEAPONS[weapon_id]
+        left, right = self.left - 298, self.left - 12
+        bottom, top = self.top - 238, self.top
+        draw_rectangle(left, bottom, right, top, 18, 31, 30, filled=True)
+        draw_rectangle(left, bottom, right, top, 236, 204, 117)
+        font.draw(left + 12, top - 24, spec["name"], (255, 226, 144))
+        lines = [
+            f'공격력  {spec["damage"]}',
+            f'공격 속도  {spec["speed_label"]}',
+            f'공격 범위  {spec["range_label"]} ({spec["reach"]})',
+            f'강화 베기 피해  {spec["damage"] * 2}',
+            f'검기 발사 피해  {round(spec["damage"] * 1.5)}',
+            "현재 장착 중" if weapon_id == self.player.equipped_weapon else
+            "동작 종료 후 장착 예약" if weapon_id == self.player.pending_weapon else
+            "더블클릭으로 장착",
+            "공통 스킬 · 크리티컬 없음",
+        ]
+        for index, line in enumerate(lines):
+            font.draw(left + 12, top - 55 - index * 26, line,
+                      (223, 235, 217) if index < 5 else (174, 213, 236))
 
     def draw_feedback(self, camera_x, font):
         if not self.player.alive or self.feedback_remaining <= 0:
