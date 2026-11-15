@@ -33,10 +33,10 @@ def draw_player_status(player, stage, font):
 
 def draw_stage_header(stage, player, font):
     panel(452, 645, 828, 704, dark=True)
-    text(font, 473, 683, 'STAGE 01', (237, 202, 126))
+    text(font, 473, 683, f'STAGE {stage.number:02d}', (237, 202, 126))
     text(font, 584, 683, stage.zone_name(player.x), WHITE)
     remaining = stage.remaining_monsters
-    label = f'몬스터 처치  {stage.initial_monster_count - remaining} / {stage.initial_monster_count}' if remaining else '보상 수령 완료 · 출구 포탈 개방'
+    label = f'{"늑대" if stage.number == 2 else "몬스터"} 처치  {stage.initial_monster_count - remaining} / {stage.initial_monster_count}' if remaining else '보상 수령 완료 · 출구 포탈 개방'
     text(font, 487, 660, label, (202, 211, 225))
 
 

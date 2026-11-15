@@ -41,7 +41,7 @@ class SwordWave:
         # 이동 전후 범위를 합쳐 빠르게 날아가도 적을 건너뛰지 않는다.
         swept_box = (min(old_x, self.x) - self.width / 2, self.y - self.height / 2,
                      max(old_x, self.x) + self.width / 2, self.y + self.height / 2)
-        for target in player.stage.slimes:
+        for target in player.stage.monsters:
             if not target.alive or target in self.hit_targets:
                 continue
             if overlap(swept_box, target.get_body_box()):
@@ -144,7 +144,7 @@ class SkillController:
                 self.direction = direction
             if self.active == "slash" and .20 <= self.progress < .80:
                 box = self.slash_geometry()[4]
-                for target in p.stage.slimes:
+                for target in p.stage.monsters:
                     if not target.alive or target in self.hit_targets:
                         continue
                     if overlap(box, target.get_body_box()):

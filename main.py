@@ -82,13 +82,13 @@ def update(stage, player, frame_time):
     while remaining_time > 0:
         step = min(remaining_time, max_step)
 
-        stage.update(step)
+        stage.update(step, player)
         player.update(step)
 
         # 공격 판정이 끝난 뒤 처치된 슬라임을 제거한다.
-        stage.slimes[:] = [
+        stage.monsters[:] = [
             slime
-            for slime in stage.slimes
+            for slime in stage.monsters
             if slime.alive
         ]
 
@@ -98,6 +98,15 @@ def update(stage, player, frame_time):
         stage.resolve_clear(player)
 
         remaining_time -= step
+
+
+def advance_stage(stage, player):
+    from stage2 import DeepForestStage
+    next_stage = DeepForestStage()
+    player.enter_stage(next_stage)
+    camera = Camera(next_stage.width)
+    camera.update(player.x, 0, snap=True)
+    return next_stage, camera
 
 
 def draw_game_over(normal_font, title_font):
@@ -138,7 +147,7 @@ def draw(stage, player, camera, minimap, normal_font, title_font):
     player.inventory.draw_feedback(camera.x, normal_font)
 
     # 몬스터 체력바.
-    for slime in stage.slimes:
+    for slime in stage.monsters:
         if camera.visible(slime.x - slime.width, slime.x + slime.width):
             slime.draw_health_bar(camera.x)
 
@@ -195,6 +204,11 @@ def main():
                 camera.update(player.x, 0.0, snap=True)
 
                 # 재시작 로딩 시간을 게임 시간에 포함하지 않는다.
+                previous_time = get_time()
+                frame_time = 0.0
+
+            if stage.next_stage_requested and player.alive:
+                stage, camera = advance_stage(stage, player)
                 previous_time = get_time()
                 frame_time = 0.0
 

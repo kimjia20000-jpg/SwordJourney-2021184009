@@ -104,6 +104,29 @@ class Player:
             in IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
         ) * PLAYER_DRAW_SCALE / 2
 
+    def enter_stage(self, stage):
+        """레벨·능력치·소지품을 유지하고 이전 맵의 동작만 정리한다."""
+        self.stage = stage
+        self.x, self.y = stage.spawn_x, stage.spawn_y
+        self.velocity_y = self.knockback_velocity_x = 0.0
+        self.left_pressed = self.right_pressed = self.jump_pressed = self.attack_pressed = False
+        self.direction, self.frame, self.motion = 0, 0.0, 'IDLE'
+        self.on_ground = True
+        self.cancel_attack()
+        self.skills.cancel_cast()
+        self.skills.waves.clear()
+        self.skills.hit_effects.clear()
+        self.skill_keys_pressed.clear()
+        self.inventory.keys_pressed.clear()
+        self.inventory.close()
+        self.hurt_remaining = 0.0
+        self.invincible_remaining = 1.0
+        self.apply_pending_weapon()
+        self.notice = ''
+        self.notice_remaining = self.level_notice_remaining = 0.0
+        self.inventory.feedback_remaining = 0.0
+        self.show_notice('깊은 숲 진입 · 늑대는 3마리씩 함께 추적합니다.')
+
     @property
     def attack_power(self):
         return WEAPONS[self.equipped_weapon]["damage"]
@@ -339,7 +362,7 @@ class Player:
         box = self.get_attack_box()
         if box is None:
             return
-        for slime in self.stage.slimes:
+        for slime in self.stage.monsters:
             if not slime.alive or slime in self.hit_targets:
                 continue
             if rectangles_overlap(box, slime.get_body_box()):
@@ -353,9 +376,9 @@ class Player:
     def check_contact_damage(self):
         if not self.alive or self.invincible_remaining > 0:
             return
-        for slime in self.stage.slimes:
+        for slime in self.stage.monsters:
             if slime.alive and rectangles_overlap(self.get_body_box(), slime.get_body_box()):
-                if self.take_damage(SLIME_CONTACT_DAMAGE, source_x=slime.x):
+                if self.take_damage(getattr(slime, "contact_damage", SLIME_CONTACT_DAMAGE), source_x=slime.x):
                     break
 
     def take_damage(self, damage, source_x=None):

@@ -25,7 +25,7 @@ class Minimap:
 
     def draw(self, stage, player, camera, font):
         panel(self.left, self.bottom, self.right, self.top)
-        title(font, self.left, self.right, self.top, '전체 지도')
+        title(font, self.left, self.right, self.top, f'{stage.number}스테이지 · 전체 지도')
         text(font, self.left + 30, self.bottom + 17, '나', MUTED)
         text(font, self.left + 107, self.bottom + 17, '몬스터', MUTED)
         text(font, self.left + 215, self.bottom + 17, '출구', MUTED)
@@ -50,7 +50,7 @@ class Minimap:
             # 출구는 점보다 큰 푸른 사각 테두리로 구분한다.
             x, y = round(x), round(y)
             draw_rectangle(x - 4, y - 5, x + 4, y + 5, 95, 216, 255)
-        for slime in stage.slimes:
+        for slime in stage.monsters:
             if slime.alive:
                 x, y = self.project(stage, slime.x, slime.y + slime.height / 2)
                 self.draw_dot(x, y, (255, 76, 76), 1)

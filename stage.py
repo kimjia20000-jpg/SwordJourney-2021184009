@@ -42,6 +42,11 @@ class Platform:
 
 class Stage:
     def __init__(self):
+        self.number = 1
+        self.next_stage_requested = False
+        self.rewards = dict(STAGE_CLEAR_REWARDS)
+        self.reward_labels = (("forest_sword", "숲의 장검 ×1"), ("hp_potion", "체력 포션 ×2"), ("mp_potion", "마나 포션 ×2"))
+        self.reward_equip_hint = "I 가방 → 장검 더블클릭 장착 · 오른쪽 출구 개방"
         self.width = WORLD_WIDTH
         self.height = SCREEN_HEIGHT
         self.spawn_x = 120.0
@@ -76,7 +81,7 @@ class Stage:
         ]
         self.platforms.extend(Platform(*layout) for layout in layouts)
         self.create_slimes()
-        self.initial_monster_count = len(self.slimes)
+        self.initial_monster_count = len(self.monsters)
         self.cleared = False
         self.reward_granted = False
         self.reward_wait_notice_shown = False
@@ -94,30 +99,38 @@ class Stage:
 
     def create_slimes(self):
         ground = self.platforms[0]
-        self.slimes = []
+        self.monsters = []
         # 바닥 6마리. 시작 지점과 마지막 출구 예정 공간은 비워 둔다.
         for x, left, right in (
             (620, 530, 800), (1080, 980, 1190),
             (1510, 1360, 1650), (2210, 2100, 2360),
             (2780, 2660, 2890), (3480, 3360, 3600),
         ):
-            self.slimes.append(Slime(
+            self.monsters.append(Slime(
                 self.slime_image, ground, x,
-                direction=1 if len(self.slimes) % 2 == 0 else -1,
+                direction=1 if len(self.monsters) % 2 == 0 else -1,
                 patrol_left=left, patrol_right=right,
             ))
         # 구역별 상단 사냥터 10마리. 좁은 연결 발판은 비운다.
         for index in (1, 2, 3, 6, 8, 9, 10, 14, 16, 17):
             platform = self.platforms[index]
-            self.slimes.append(Slime(
+            self.monsters.append(Slime(
                 self.slime_image, platform,
                 (platform.left + platform.right) / 2,
                 direction=1 if index % 2 else -1,
             ))
 
     @property
+    def slimes(self):
+        return self.monsters
+
+    @slimes.setter
+    def slimes(self, value):
+        self.monsters = value
+
+    @property
     def remaining_monsters(self):
-        return sum(slime.alive for slime in self.slimes)
+        return sum(slime.alive for slime in self.monsters)
 
     def zone_name(self, x):
         for left, right, name in self.zones:
@@ -125,9 +138,11 @@ class Stage:
                 return name
         return self.zones[-1][2]
 
-    def find_landing(self, x, half_width, old_y, new_y):
+    def find_landing(self, x, half_width, old_y, new_y, ignore=None):
         landing = None
         for platform in self.platforms:
+            if platform is ignore:
+                continue
             overlaps = x + half_width > platform.left and x - half_width < platform.right
             crosses = old_y >= platform.top and new_y <= platform.top
             if overlaps and crosses:
@@ -140,7 +155,7 @@ class Stage:
         # cleared를 이용해 다음 프레임이나 포탈 재진입 때 중복 지급을 막는다.
         if self.cleared or self.remaining_monsters != 0 or not player.alive:
             return False
-        if not player.inventory.grant_items(STAGE_CLEAR_REWARDS):
+        if not player.inventory.grant_items(self.rewards):
             if not self.reward_wait_notice_shown:
                 player.show_notice("보상 공간이 부족합니다. 인벤토리를 확인하세요.")
                 self.reward_wait_notice_shown = True
@@ -153,8 +168,10 @@ class Stage:
 
     def handle_portal_event(self, event, player):
         if self.portal.handle_event(event, player):
-            # 2스테이지 구현 전에는 현재 맵을 유지한다.
-            self.portal.show_notice("2스테이지는 준비 중입니다. 현재 맵을 계속 탐험하세요.")
+            if self.number == 1:
+                self.next_stage_requested = True
+            else:
+                self.portal.show_notice("깊은 숲을 정복했습니다! 다음 지역은 준비 중입니다.")
 
     def draw_status(self, player, normal_font, title_font):
         if not player.alive:
@@ -162,17 +179,13 @@ class Stage:
         if self.clear_banner_remaining > 0:
             cx, cy = SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2
             panel(cx - 274, cy - 105, cx + 274, cy + 105, dark=True)
-            title_font.draw(cx - 150, cy + 66, "1스테이지 클리어!", (255, 229, 137))
+            title_font.draw(cx - 150, cy + 66, f"{self.number}스테이지 클리어!", (255, 229, 137))
             text(normal_font, cx - 121, cy + 29, "클리어 보상이 가방에 지급됐어요.", WHITE)
-            for index, (item, label) in enumerate((
-                ("forest_sword", "숲의 장검 ×1"),
-                ("hp_potion", "체력 포션 ×2"),
-                ("mp_potion", "마나 포션 ×2"),
-            )):
+            for index, (item, label) in enumerate(self.reward_labels):
                 x = cx - 179 + index * 180
                 player.inventory.draw_icon(item, x, cy - 7, 38)
                 text(normal_font, x - 48, cy - 38, label, GOLD)
-            text(normal_font, cx - 206, cy - 67, "I 가방 → 장검 더블클릭 장착 · 오른쪽 출구 개방", WHITE)
+            text(normal_font, cx - 206, cy - 67, self.reward_equip_hint, WHITE)
             text(normal_font, cx - 118, cy - 88, "이동과 전투는 계속 진행됩니다.", (192, 205, 226))
         if self.portal.notice_remaining > 0:
             message = self.portal.notice
@@ -184,11 +197,11 @@ class Stage:
         panel(265, 84, SCREEN_WIDTH - 265, 127, dark=True)
         normal_font.draw(280, 104, message, (215, 241, 255))
 
-    def update(self, dt):
+    def update(self, dt, player=None):
         self.clear_banner_remaining = max(0.0, self.clear_banner_remaining - dt)
         self.portal.update(dt)
         # 화면 밖에서도 몬스터의 이동과 상태 갱신을 계속한다.
-        for slime in self.slimes:
+        for slime in self.monsters:
             slime.update(dt)
 
     def draw_background(self, camera):
@@ -243,6 +256,6 @@ class Stage:
             platform.draw(self.platform_image, camera)
         self.draw_plants(camera)
         self.portal.draw(camera)
-        for slime in self.slimes:
+        for slime in self.monsters:
             if camera.visible(slime.x - slime.width, slime.x + slime.width):
                 slime.draw(camera.x)
