@@ -125,7 +125,8 @@ class Player:
         self.notice = ''
         self.notice_remaining = self.level_notice_remaining = 0.0
         self.inventory.feedback_remaining = 0.0
-        self.show_notice('깊은 숲 진입 · 늑대는 3마리씩 함께 추적합니다.')
+        self.show_notice('동굴 안쪽의 골렘을 쓰러뜨리세요.' if stage.number == 3
+                         else '깊은 숲 진입 · 늑대는 3마리씩 함께 추적합니다.')
 
     @property
     def attack_power(self):
@@ -377,7 +378,8 @@ class Player:
         if not self.alive or self.invincible_remaining > 0:
             return
         for slime in self.stage.monsters:
-            if slime.alive and rectangles_overlap(self.get_body_box(), slime.get_body_box()):
+            contact_box = slime.get_contact_box() if hasattr(slime, 'get_contact_box') else slime.get_body_box()
+            if slime.alive and rectangles_overlap(self.get_body_box(), contact_box):
                 if self.take_damage(getattr(slime, "contact_damage", SLIME_CONTACT_DAMAGE), source_x=slime.x):
                     break
 

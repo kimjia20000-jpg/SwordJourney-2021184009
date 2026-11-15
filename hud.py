@@ -32,11 +32,16 @@ def draw_player_status(player, stage, font):
 
 
 def draw_stage_header(stage, player, font):
+    if stage.number == 3 and stage.arena_started:
+        stage.boss.draw_hud(font)
+        return
     panel(452, 645, 828, 704, dark=True)
     text(font, 473, 683, f'STAGE {stage.number:02d}', (237, 202, 126))
     text(font, 584, 683, stage.zone_name(player.x), WHITE)
     remaining = stage.remaining_monsters
     label = f'{"늑대" if stage.number == 2 else "몬스터"} 처치  {stage.initial_monster_count - remaining} / {stage.initial_monster_count}' if remaining else '보상 수령 완료 · 출구 포탈 개방'
+    if stage.number == 3:
+        label = '안쪽으로 이동하여 골렘을 처치하세요.'
     text(font, 487, 660, label, (202, 211, 225))
 
 
@@ -89,8 +94,9 @@ def draw_messages(player, font):
     if not player.alive:
         return
     if player.level_notice_remaining > 0:
-        panel(432, 592, 848, 633, dark=True)
-        text(font, 453, 613, player.level_notice, (255, 225, 137))
+        shift = -65 if player.stage.number == 3 and player.stage.arena_started else 0
+        panel(432, 592 + shift, 848, 633 + shift, dark=True)
+        text(font, 453, 613 + shift, player.level_notice, (255, 225, 137))
     if player.notice_remaining > 0:
         panel(392, 134, 908, 173, dark=True)
         text(font, 410, 154, player.notice, WHITE)

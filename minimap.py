@@ -28,7 +28,7 @@ class Minimap:
         title(font, self.left, self.right, self.top, f'{stage.number}스테이지 · 전체 지도')
         text(font, self.left + 30, self.bottom + 17, '나', MUTED)
         text(font, self.left + 107, self.bottom + 17, '몬스터', MUTED)
-        text(font, self.left + 215, self.bottom + 17, '출구', MUTED)
+        text(font, self.left + 215, self.bottom + 17, '보스' if stage.number == 3 else '출구', MUTED)
         self.draw_dot(self.left + 20, self.bottom + 17, (75, 255, 113), 2)
         self.draw_dot(self.left + 97, self.bottom + 17, (255, 76, 76), 2)
         self.draw_dot(self.left + 205, self.bottom + 17, (95, 216, 255), 2)
@@ -45,13 +45,16 @@ class Minimap:
         x1, y1 = self.project(stage, camera.x, 0)
         x2, y2 = self.project(stage, camera.x + camera.width, stage.height)
         draw_rectangle(round(x1), round(y1), round(x2), round(y2), 235, 235, 221)
+        if stage.number == 3 and stage.boss.alive:
+            x,y=self.project(stage,stage.boss.x,stage.boss.y+100)
+            self.draw_dot(x,y,(95,216,255),3)
         if stage.portal.active:
             x, y = self.project(stage, stage.portal.x, stage.portal.y + 60)
             # 출구는 점보다 큰 푸른 사각 테두리로 구분한다.
             x, y = round(x), round(y)
             draw_rectangle(x - 4, y - 5, x + 4, y + 5, 95, 216, 255)
         for slime in stage.monsters:
-            if slime.alive:
+            if slime.alive and slime is not getattr(stage,'boss',None):
                 x, y = self.project(stage, slime.x, slime.y + slime.height / 2)
                 self.draw_dot(x, y, (255, 76, 76), 1)
         # 플레이어를 마지막에 표시해 겹쳤을 때도 눈에 띄게 한다.

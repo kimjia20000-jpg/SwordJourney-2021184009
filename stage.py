@@ -168,7 +168,7 @@ class Stage:
 
     def handle_portal_event(self, event, player):
         if self.portal.handle_event(event, player):
-            if self.number == 1:
+            if self.number in (1, 2):
                 self.next_stage_requested = True
             else:
                 self.portal.show_notice("깊은 숲을 정복했습니다! 다음 지역은 준비 중입니다.")

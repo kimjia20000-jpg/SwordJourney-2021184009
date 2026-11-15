@@ -57,12 +57,13 @@ def handle_events(player):
         ):
             return "quit"
 
-        if not player.alive:
+        if not player.alive or (player.stage.number == 3 and player.stage.cleared):
             if (
                 event.type == SDL_KEYDOWN
                 and event.key == SDLK_RETURN
             ):
-                action = "restart"
+                if not player.alive or player.stage.victory_time >= 2.2:
+                    action = "restart"
 
         else:
             player.stage.handle_portal_event(event, player)
@@ -82,8 +83,14 @@ def update(stage, player, frame_time):
     while remaining_time > 0:
         step = min(remaining_time, max_step)
 
+        if stage.number == 3 and stage.cleared:
+            stage.resolve_clear(player)
+            stage.update(remaining_time, player)
+            return
         stage.update(step, player)
         player.update(step)
+        if stage.number == 3:
+            stage.constrain_player(player)
 
         # 공격 판정이 끝난 뒤 처치된 슬라임을 제거한다.
         stage.monsters[:] = [
@@ -101,8 +108,14 @@ def update(stage, player, frame_time):
 
 
 def advance_stage(stage, player):
-    from stage2 import DeepForestStage
-    next_stage = DeepForestStage()
+    if stage.number == 1:
+        from stage2 import DeepForestStage
+        next_stage = DeepForestStage()
+    elif stage.number == 2:
+        from stage3 import CaveStage
+        next_stage = CaveStage()
+    else:
+        raise ValueError("마지막 스테이지 이후의 지역은 없습니다.")
     player.enter_stage(next_stage)
     camera = Camera(next_stage.width)
     camera.update(player.x, 0, snap=True)
@@ -214,7 +227,10 @@ def main():
 
             update(stage, player, frame_time)
             if player.alive:
-                camera.update(player.x, frame_time)
+                if stage.number == 3 and stage.arena_started:
+                    camera.x = stage.arena_left
+                else:
+                    camera.update(player.x, frame_time)
 
             draw(
                 stage,
