@@ -22,6 +22,7 @@ from player import Player
 from stage import Stage
 from camera import Camera
 from minimap import Minimap
+from hud import draw_player_status, draw_skill_bar, draw_messages, draw_level_effect
 
 
 def load_ui_fonts():
@@ -98,63 +99,6 @@ def update(stage, player, frame_time):
         remaining_time -= step
 
 
-def draw_player_health(player, font):
-    # 왼쪽 위 체력 표시 영역.
-    panel_left = 16
-    panel_right = 296
-    panel_bottom = SCREEN_HEIGHT - 91
-    panel_top = SCREEN_HEIGHT - 15
-
-    draw_rectangle(
-        panel_left,
-        panel_bottom,
-        panel_right,
-        panel_top,
-        27, 36, 31,
-        filled=True
-    )
-
-    font.draw(
-        28,
-        SCREEN_HEIGHT - 40,
-        f"체력  {player.hp} / {player.max_hp}",
-        (255, 255, 255)
-    )
-
-    bar_left = 28
-    bar_bottom = SCREEN_HEIGHT - 75
-    bar_width = 252
-    bar_height = 16
-
-    bar_right = bar_left + bar_width - 1
-    bar_top = bar_bottom + bar_height - 1
-
-    # 체력이 비어 있는 영역.
-    draw_rectangle(
-        bar_left,
-        bar_bottom,
-        bar_right,
-        bar_top,
-        65, 65, 65,
-        filled=True
-    )
-
-    # 남은 체력.
-    fill_width = round(
-        bar_width * player.hp / player.max_hp
-    )
-
-    if fill_width > 0:
-        draw_rectangle(
-            bar_left,
-            bar_bottom,
-            bar_left + fill_width - 1,
-            bar_top,
-            220, 65, 65,
-            filled=True
-        )
-
-
 def draw_game_over(normal_font, title_font):
     center_x = SCREEN_WIDTH / 2
     center_y = SCREEN_HEIGHT / 2
@@ -203,19 +147,17 @@ def draw(stage, player, camera, minimap, normal_font, title_font):
 
     stage.draw(camera)
     player.draw(camera.x)
+    player.skills.draw(camera.x)
+    draw_level_effect(player, camera.x)
 
     # 몬스터 체력바.
     for slime in stage.slimes:
         if camera.visible(slime.x - slime.width, slime.x + slime.width):
             slime.draw_health_bar(camera.x)
 
-    # 플레이어 체력바.
-    draw_player_health(player, normal_font)
-    draw_rectangle(16, SCREEN_HEIGHT - 132, 296, SCREEN_HEIGHT - 100,
-                   27, 36, 31, filled=True)
-    normal_font.draw(28, SCREEN_HEIGHT - 121,
-                     f"남은 몬스터  {stage.remaining_monsters} / {stage.initial_monster_count}",
-                     (255, 234, 174))
+    draw_player_status(player, stage, normal_font)
+    draw_skill_bar(player, normal_font)
+    draw_messages(player, normal_font)
     draw_rectangle(430, SCREEN_HEIGHT - 50, 850, SCREEN_HEIGHT - 15,
                    27, 36, 31, filled=True)
     normal_font.draw(446, SCREEN_HEIGHT - 39,

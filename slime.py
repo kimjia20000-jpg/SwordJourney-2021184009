@@ -57,6 +57,7 @@ class Slime:
         self.state = "WAIT"
         self.state_time = 0.0
         self.wait_duration = random.uniform(0.0, WAIT_TIME_MAX)
+        self.exp_reward = 10
         self.max_hp = SLIME_MAX_HP
         self.hp = self.max_hp
         self.alive = True

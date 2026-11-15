@@ -164,8 +164,8 @@ class Stage:
                        else "닫힌 포탈 — 모든 몬스터를 처치하세요.")
         else:
             return
-        draw_rectangle(265, 18, SCREEN_WIDTH - 265, 61, 25, 43, 37, filled=True)
-        normal_font.draw(280, 35, message, (215, 241, 255))
+        draw_rectangle(265, 84, SCREEN_WIDTH - 265, 127, 25, 43, 37, filled=True)
+        normal_font.draw(280, 104, message, (215, 241, 255))
 
     def update(self, dt):
         self.clear_banner_remaining = max(0.0, self.clear_banner_remaining - dt)

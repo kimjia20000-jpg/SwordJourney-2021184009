@@ -2,13 +2,14 @@ from pathlib import Path
 
 from pico2d import (
     load_image, SDL_KEYDOWN, SDL_KEYUP,
-    SDLK_LEFT, SDLK_RIGHT, SDLK_SPACE, SDLK_a,
+    SDLK_LEFT, SDLK_RIGHT, SDLK_SPACE, SDLK_a, SDLK_s, SDLK_d,
 )
 from settings import (
     PLAYER_DRAW_SCALE, PLAYER_FOOT_HALF_WIDTH, MOVE_SPEED,
     JUMP_SPEED, GRAVITY, IDLE_FPS, RUN_FPS, ATTACK_DURATION,
 )
 
+from skills import SkillController, SKILL_DATA
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "assets" / "images" / "player_actions.png"
@@ -74,6 +75,17 @@ class Player:
         self.max_hp = PLAYER_MAX_HP
         self.hp = self.max_hp
         self.alive = True
+        self.level = 1
+        self.exp = 0
+        self.max_mp = 50
+        self.mp = float(self.max_mp)
+        self.attack_power = BASIC_ATTACK_DAMAGE
+        self.notice = ""
+        self.notice_remaining = 0.0
+        self.level_notice = ""
+        self.level_notice_remaining = 0.0
+        self.skill_keys_pressed = set()
+        self.skills = SkillController(self)
         self.invincible_remaining = 0.0
         self.hurt_remaining = 0.0
         self.hurt_face_direction = 1
@@ -83,8 +95,58 @@ class Player:
             in IDLE_FRAMES + RUN_FRAMES + ATTACK_FRAMES
         ) * PLAYER_DRAW_SCALE / 2
 
+    @property
+    def exp_to_next(self):
+        return 50 + (self.level - 1) * 25
+
+    def gain_exp(self, amount):
+        if not self.alive or amount <= 0:
+            return
+        self.exp += amount
+        leveled = False
+        unlocked = []
+        while self.exp >= self.exp_to_next:
+            self.exp -= self.exp_to_next
+            self.level += 1
+            self.max_hp += 10
+            self.max_mp += 5
+            self.hp = self.max_hp
+            self.mp = float(self.max_mp)
+            leveled = True
+            unlocked.extend(spec["name"] for spec in SKILL_DATA.values()
+                            if spec["level"] == self.level)
+        if leveled:
+            self.level_notice = f"레벨 {self.level}! " + (
+                " · ".join(unlocked) + " 해금" if unlocked else "체력과 마나 회복"
+            )
+            self.level_notice_remaining = 2.5
+
+    def deal_damage(self, target, damage, direction):
+        # 기본 공격과 모든 스킬이 이 경로를 공유한다.
+        # 이미 죽은 대상은 take_damage에서 거부하므로 경험치가 중복되지 않는다.
+        if not self.alive:
+            return False
+        if not target.take_damage(damage, attack_direction=direction):
+            return False
+        if not target.alive:
+            self.gain_exp(target.exp_reward)
+        return True
+
+    def show_notice(self, text):
+        self.notice = text
+        self.notice_remaining = 1.6
+
     def handle_event(self, event):
         if not self.alive:
+            return
+        skill_keys = {SDLK_s: "slash", SDLK_d: "wave"}
+        if event.type == SDL_KEYUP and event.key in skill_keys:
+            self.skill_keys_pressed.discard(event.key)
+            return
+        if event.type == SDL_KEYDOWN and event.key in skill_keys:
+            if event.key not in self.skill_keys_pressed:
+                self.skill_keys_pressed.add(event.key)
+                self.skills.try_cast(skill_keys[event.key])
             return
         if event.type == SDL_KEYDOWN:
             if event.key == SDLK_LEFT:
@@ -113,7 +175,7 @@ class Player:
                 self.attack_pressed = False
 
     def start_attack(self):
-        if not self.alive or self.hurt_remaining > 0:
+        if not self.alive or self.hurt_remaining > 0 or self.skills.active is not None:
             return
         input_direction = int(self.right_pressed) - int(self.left_pressed)
         if input_direction:
@@ -131,9 +193,13 @@ class Player:
     def update(self, dt):
         if not self.alive:
             return
+        self.mp = min(float(self.max_mp), self.mp + 2.0 * dt)
+        self.notice_remaining = max(0.0, self.notice_remaining - dt)
+        self.level_notice_remaining = max(0.0, self.level_notice_remaining - dt)
         self.invincible_remaining = max(0.0, self.invincible_remaining - dt)
         was_hurt = self.hurt_remaining > 0
         self.update_movement(dt)
+        self.skills.update(dt)
         if was_hurt:
             self.hurt_remaining = max(0.0, self.hurt_remaining - dt)
             if self.hurt_remaining <= 0:
@@ -230,7 +296,7 @@ class Player:
             if not slime.alive or slime in self.hit_targets:
                 continue
             if rectangles_overlap(box, slime.get_body_box()):
-                if slime.take_damage(BASIC_ATTACK_DAMAGE, attack_direction=self.attack_direction):
+                if self.deal_damage(slime, self.attack_power, self.attack_direction):
                     self.hit_targets.add(slime)
 
     def get_body_box(self):
@@ -258,6 +324,7 @@ class Player:
         else:
             direction = -1 if source_x > self.x else 1
         self.cancel_attack()
+        self.skills.cancel_cast()
         self.hurt_remaining = HURT_DURATION
         self.hurt_face_direction = -direction
         self.face_direction = self.hurt_face_direction
@@ -278,6 +345,8 @@ class Player:
         self.direction = 0
         self.velocity_y = 0.0
         self.cancel_attack()
+        self.skills.clear_on_death()
+        self.skill_keys_pressed.clear()
         self.motion = "IDLE"
         self.frame = 0.0
 
@@ -288,7 +357,10 @@ class Player:
         if self.alive and self.invincible_remaining > 0:
             if int(self.invincible_remaining / BLINK_INTERVAL) % 2 == 1:
                 return
-        if self.attacking:
+        if self.skills.active is not None:
+            index = min(int(self.skills.progress * len(ATTACK_FRAMES)), len(ATTACK_FRAMES) - 1)
+            rect, direction = ATTACK_FRAMES[index], self.skills.direction
+        elif self.attacking:
             index = min(int(self.attack_elapsed / ATTACK_DURATION * len(ATTACK_FRAMES)),
                         len(ATTACK_FRAMES) - 1)
             rect, direction = ATTACK_FRAMES[index], self.attack_direction

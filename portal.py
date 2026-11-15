@@ -34,7 +34,8 @@ class Portal:
 
     def can_enter(self, player):
         return (self.active and self.nearby(player)
-                and player.hurt_remaining <= 0 and not player.attacking)
+                and player.hurt_remaining <= 0 and not player.attacking
+                and player.skills.active is None)
 
     def handle_event(self, event, player):
         if event.type == SDL_KEYUP and event.key == SDLK_UP:
