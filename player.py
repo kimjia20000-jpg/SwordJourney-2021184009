@@ -82,7 +82,7 @@ class Player:
         self.max_mp = 50
         self.mp = float(self.max_mp)
         self.equipped_weapon = DEFAULT_WEAPON
-        self.owned_weapons = set(WEAPONS)
+        self.owned_weapons = {DEFAULT_WEAPON}
         self.pending_weapon = None
         self.weapon_art = WeaponArt()
         self.attack_weapon = DEFAULT_WEAPON

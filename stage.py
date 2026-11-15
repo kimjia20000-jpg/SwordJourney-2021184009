@@ -6,12 +6,13 @@ from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, GROUND_Y, PLATFORM_THICKNESS,
 )
 from slime import Slime
-from ui_theme import panel
+from ui_theme import panel, text, WHITE, GOLD
 from portal import Portal
 
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_DIR = BASE_DIR / "assets" / "images"
+STAGE_CLEAR_REWARDS = {"forest_sword": 1, "hp_potion": 2, "mp_potion": 2}
 
 
 class Platform:
@@ -77,6 +78,8 @@ class Stage:
         self.create_slimes()
         self.initial_monster_count = len(self.slimes)
         self.cleared = False
+        self.reward_granted = False
+        self.reward_wait_notice_shown = False
         self.clear_banner_remaining = 0.0
         # 오른쪽 끝의 높이 250 발판. 아래층과 진입 판정을 구분한다.
         self.portal = Portal(self.width - 110, self.platforms[-2].top)
@@ -132,13 +135,19 @@ class Stage:
                     landing = platform
         return landing
 
-    def resolve_clear(self):
-        # 마지막 공격과 사망 몬스터 정리가 끝난 뒤 호출한다.
-        # 한 번만 전환하므로 배너와 포탈이 매 프레임 초기화되지 않는다.
-        if self.cleared or self.remaining_monsters != 0:
+    def resolve_clear(self, player):
+        # 몬스터 정리 후 살아 있는 플레이어에게 보상 묶음을 먼저 지급한다.
+        # cleared를 이용해 다음 프레임이나 포탈 재진입 때 중복 지급을 막는다.
+        if self.cleared or self.remaining_monsters != 0 or not player.alive:
             return False
+        if not player.inventory.grant_items(STAGE_CLEAR_REWARDS):
+            if not self.reward_wait_notice_shown:
+                player.show_notice("보상 공간이 부족합니다. 인벤토리를 확인하세요.")
+                self.reward_wait_notice_shown = True
+            return False
+        self.reward_granted = True
         self.cleared = True
-        self.clear_banner_remaining = 3.2
+        self.clear_banner_remaining = 5.0
         self.portal.activate()
         return True
 
@@ -152,10 +161,19 @@ class Stage:
             return
         if self.clear_banner_remaining > 0:
             cx, cy = SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2
-            panel(cx - 260, cy - 48, cx + 260, cy + 64, dark=True)
-            title_font.draw(cx - 150, cy + 23, "1스테이지 클리어!", (255, 229, 137))
-            normal_font.draw(cx - 193, cy - 22,
-                             "오른쪽 끝 출구 포탈이 열렸습니다.", (220, 247, 235))
+            panel(cx - 274, cy - 105, cx + 274, cy + 105, dark=True)
+            title_font.draw(cx - 150, cy + 66, "1스테이지 클리어!", (255, 229, 137))
+            text(normal_font, cx - 121, cy + 29, "클리어 보상이 가방에 지급됐어요.", WHITE)
+            for index, (item, label) in enumerate((
+                ("forest_sword", "숲의 장검 ×1"),
+                ("hp_potion", "체력 포션 ×2"),
+                ("mp_potion", "마나 포션 ×2"),
+            )):
+                x = cx - 179 + index * 180
+                player.inventory.draw_icon(item, x, cy - 7, 38)
+                text(normal_font, x - 48, cy - 38, label, GOLD)
+            text(normal_font, cx - 206, cy - 67, "I 가방 → 장검 더블클릭 장착 · 오른쪽 출구 개방", WHITE)
+            text(normal_font, cx - 118, cy - 88, "이동과 전투는 계속 진행됩니다.", (192, 205, 226))
         if self.portal.notice_remaining > 0:
             message = self.portal.notice
         elif self.portal.nearby(player):

@@ -30,8 +30,8 @@ class Inventory:
         self.skill_visible = False
         self.counts = {"hp_potion": 3, "mp_potion": 3}
         # 같은 포션은 한 슬롯에 쌓인다. 나머지는 이후 아이템용 빈 슬롯.
-        self.slots = ["hp_potion", "mp_potion", "adventurer_sword", "forest_sword",
-                      "heavy_sword", None, None, None]
+        self.slots = ["hp_potion", "mp_potion", "adventurer_sword", None,
+                      None, None, None, None]
         self.left = SCREEN_WIDTH - 346
         self.right = SCREEN_WIDTH - 16
         self.bottom = 98
@@ -44,6 +44,28 @@ class Inventory:
         self.feedback = ""
         self.feedback_color = (190, 242, 196)
         self.feedback_remaining = 0.0
+
+    def grant_items(self, rewards):
+        """공간과 항목을 먼저 검사하고 보상 묶음을 한 번에 넣는다."""
+        if not self.player.alive:
+            return False
+        if any(item not in ITEMS and item not in WEAPONS for item in rewards):
+            return False
+        if any(not isinstance(count, int) or count <= 0 for count in rewards.values()):
+            return False
+        # 검은 고유 장비로 취급하며 같은 검을 다시 받아도 슬롯을 추가하지 않는다.
+        new_items = [item for item in rewards if item not in self.slots]
+        free_slots = [i for i, item in enumerate(self.slots) if item is None]
+        if len(new_items) > len(free_slots):
+            return False
+        for index, item in zip(free_slots, new_items):
+            self.slots[index] = item
+        for item, count in rewards.items():
+            if item in ITEMS:
+                self.counts[item] = self.counts.get(item, 0) + count
+            else:
+                self.player.owned_weapons.add(item)
+        return True
 
     def slot_rect(self, index):
         column, row = index % 4, index // 4

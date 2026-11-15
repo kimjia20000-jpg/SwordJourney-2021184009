@@ -95,7 +95,7 @@ def update(stage, player, frame_time):
         if not player.alive:
             break
 
-        stage.resolve_clear()
+        stage.resolve_clear(player)
 
         remaining_time -= step
 
