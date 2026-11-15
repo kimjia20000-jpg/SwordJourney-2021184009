@@ -20,6 +20,8 @@ from pico2d import (
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
 from player import Player
 from stage import Stage
+from camera import Camera
+from minimap import Minimap
 
 
 def load_ui_fonts():
@@ -193,18 +195,29 @@ def draw_game_over(normal_font, title_font):
     )
 
 
-def draw(stage, player, normal_font, title_font):
+def draw(stage, player, camera, minimap, normal_font, title_font):
     clear_canvas()
 
-    stage.draw()
-    player.draw()
+    stage.draw(camera)
+    player.draw(camera.x)
 
     # 몬스터 체력바.
     for slime in stage.slimes:
-        slime.draw_health_bar()
+        if camera.visible(slime.x - slime.width, slime.x + slime.width):
+            slime.draw_health_bar(camera.x)
 
     # 플레이어 체력바.
     draw_player_health(player, normal_font)
+    draw_rectangle(16, SCREEN_HEIGHT - 132, 296, SCREEN_HEIGHT - 100,
+                   27, 36, 31, filled=True)
+    normal_font.draw(28, SCREEN_HEIGHT - 121,
+                     f"남은 몬스터  {stage.remaining_monsters} / {stage.initial_monster_count}",
+                     (255, 234, 174))
+    draw_rectangle(430, SCREEN_HEIGHT - 50, 850, SCREEN_HEIGHT - 15,
+                   27, 36, 31, filled=True)
+    normal_font.draw(446, SCREEN_HEIGHT - 39,
+                     f"1스테이지  ·  {stage.zone_name(player.x)}", (240, 240, 220))
+    minimap.draw(stage, player, camera, normal_font)
 
     if not player.alive:
         draw_game_over(normal_font, title_font)
@@ -220,6 +233,9 @@ def main():
 
         stage = Stage()
         player = Player(stage)
+        camera = Camera(stage.width)
+        camera.update(player.x, 0.0, snap=True)
+        minimap = Minimap()
 
         previous_time = get_time()
 
@@ -242,16 +258,22 @@ def main():
                 # 맵과 몬스터, 플레이어를 새로 생성한다.
                 stage = Stage()
                 player = Player(stage)
+                camera = Camera(stage.width)
+                camera.update(player.x, 0.0, snap=True)
 
                 # 재시작 로딩 시간을 게임 시간에 포함하지 않는다.
                 previous_time = get_time()
                 frame_time = 0.0
 
             update(stage, player, frame_time)
+            if player.alive:
+                camera.update(player.x, frame_time)
 
             draw(
                 stage,
                 player,
+                camera,
+                minimap,
                 normal_font,
                 title_font
             )

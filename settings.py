@@ -26,7 +26,9 @@ RUN_FPS = 10.0
 # 첫 번째 검의 임시 공격 시간.
 ATTACK_DURATION = 0.48
 
-# 이후 슬라임을 만들 때 사용할 표시 크기.
-# 아직 슬라임 생성이나 충돌에는 사용하지 않는다.
+# 슬라임 표시 크기.
 SLIME_WIDTH = 64
 SLIME_HEIGHT = 48
+
+# 한 스테이지 전체 너비. 화면 3개가 이어진다.
+WORLD_WIDTH = SCREEN_WIDTH * 3
