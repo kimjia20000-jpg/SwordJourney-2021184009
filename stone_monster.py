@@ -1,6 +1,6 @@
-import math
+from pathlib import Path
 
-from pico2d import draw_rectangle
+from pico2d import draw_rectangle, load_image
 from enemy_projectiles import RockProjectile
 
 FRAMES=((157,181,493,501),(748,207,1182,506),(157,665,502,1073),(750,770,1227,1073))
@@ -14,6 +14,8 @@ LOSE_X, LOSE_Y = 380.0, 180.0
 
 
 class StoneMonster:
+    walk_image = None
+
     def __init__(self,stage,platform,x,index):
         self.stage,self.platform,self.image=stage,platform,stage.stone_image
         self.x,self.y=float(x),float(platform.top)
@@ -34,7 +36,10 @@ class StoneMonster:
         if self.left_limit>self.right_limit:
             self.left_limit=self.right_limit=(platform.left+platform.right)/2
         self.x=max(self.left_limit,min(self.right_limit,self.x))
-        self.walk_phase=0.0
+        if StoneMonster.walk_image is None:
+            StoneMonster.walk_image=load_image(str(
+                Path(__file__).resolve().parent/'assets'/'images'/'stone_walk_sheet.png'))
+        self.walk_frame=0.0
         self.walking=False
 
     def get_body_box(self):
@@ -68,7 +73,7 @@ class StoneMonster:
             self.direction=-1
         distance=abs(self.x-old_x)
         self.walking=distance>0
-        self.walk_phase+=distance/26.0*math.tau
+        self.walk_frame=(self.walk_frame+distance/34.0*6.0)%6
 
     def update(self,dt,player):
         if not self.alive:return
@@ -117,6 +122,23 @@ class StoneMonster:
 
     def draw(self,camera_x=0):
         if not self.alive:return
+        if self.hurt_remaining>0 and int(self.hurt_remaining*40)%2:return
+        if self.walking:
+            # 3열 x 2행. 프레임마다 몸 중심과 발바닥 높이를 정렬한다.
+            image=StoneMonster.walk_image
+            frame=int(self.walk_frame)%6
+            col,row=frame%3,frame//3
+            cw,ch=image.w//3,image.h//2
+            anchors=(270,263,256,262,266,266)
+            baselines=(410,410,410,415,415,415)
+            scale=72.0/310.0
+            offset=(256-anchors[frame])*scale
+            center=self.x+(offset if self.direction==-1 else -offset)
+            center_y=self.y+(baselines[frame]-256)*scale
+            image.clip_composite_draw(col*cw,(1-row)*ch,cw,ch,
+                0,'' if self.direction==-1 else 'h',center-camera_x,center_y,
+                512*scale,512*scale)
+            return
         frame={'PATROL':0,'WAIT':0,'PICK':1,'AIM':2,'THROW':3}[self.state]
         l,t,r,b=FRAMES[frame]
         sx,sy=self.image.w/1312,self.image.h/1199
@@ -124,12 +146,8 @@ class StoneMonster:
         scale=.225
         center=self.x+(1 if self.direction==-1 else -1)*((l+r)/2-ANCHORS[frame])*scale
         w,h=(r-l)*scale,(b-t)*scale
-        # 기존 대기 이미지를 이용한 걸음 연출. 공격 자세는 원래대로 표시한다.
-        bob=2.0*abs(math.sin(self.walk_phase)) if self.walking else 0.0
-        tilt=.035*math.sin(self.walk_phase) if self.walking else 0.0
-        if self.hurt_remaining>0 and int(self.hurt_remaining*40)%2:return
         self.image.clip_composite_draw(round(l*sx),self.image.h-round(b*sy),round((r-l)*sx),round((b-t)*sy),
-                                      tilt,'' if self.direction==-1 else 'h',center-camera_x,self.y+h/2+bob,w,h)
+                                      0,'' if self.direction==-1 else 'h',center-camera_x,self.y+h/2,w,h)
 
     def draw_health_bar(self,camera_x=0):
         if not self.alive or not self.show_health_bar:return
