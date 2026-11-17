@@ -15,6 +15,7 @@ from pico2d import (
     SDL_KEYDOWN,
     SDLK_ESCAPE,
     SDLK_RETURN,
+    SDLK_F6,
 )
 
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
@@ -23,7 +24,19 @@ from stage import Stage
 from camera import Camera
 from ui_theme import panel
 from minimap import Minimap
-from hud import draw_player_status, draw_skill_bar, draw_messages, draw_level_effect, draw_stage_header, draw_skill_window
+from hud import (
+    draw_player_status,
+    draw_skill_bar,
+    draw_messages,
+    draw_level_effect,
+    draw_stage_header,
+    draw_skill_window,
+)
+
+
+# 테스트용 스테이지 스킵.
+# False로 바꾸면 F6 스킵 기능을 사용하지 않는다.
+DEBUG_STAGE_SKIP = True
 
 
 def load_ui_fonts():
@@ -57,12 +70,41 @@ def handle_events(player):
         ):
             return "quit"
 
-        if not player.alive or (player.stage.number == 3 and player.stage.cleared):
+        # 테스트용 F6 스테이지 이동.
+        if (
+            DEBUG_STAGE_SKIP
+            and event.type == SDL_KEYDOWN
+            and event.key == SDLK_F6
+        ):
+            # 키를 길게 눌렀을 때 여러 스테이지를 건너뛰지 않는다.
+            if getattr(event, "repeat", 0):
+                continue
+
+            if player.alive:
+                if player.stage.number < 3:
+                    action = "skip_stage"
+                else:
+                    player.show_notice(
+                        "현재 마지막 스테이지입니다."
+                    )
+
+            continue
+
+        if (
+            not player.alive
+            or (
+                player.stage.number == 3
+                and player.stage.cleared
+            )
+        ):
             if (
                 event.type == SDL_KEYDOWN
                 and event.key == SDLK_RETURN
             ):
-                if not player.alive or player.stage.victory_time >= 2.2:
+                if (
+                    not player.alive
+                    or player.stage.victory_time >= 2.2
+                ):
                     action = "restart"
 
         else:
@@ -87,23 +129,24 @@ def update(stage, player, frame_time):
             stage.resolve_clear(player)
             stage.update(remaining_time, player)
             return
+
         stage.update(step, player)
         player.update(step)
+
         if stage.number == 3:
             stage.constrain_player(player)
 
-        # 공격 판정이 끝난 뒤 처치된 슬라임을 제거한다.
+        # 공격 판정이 끝난 뒤 처치된 몬스터를 제거한다.
         stage.monsters[:] = [
-            slime
-            for slime in stage.monsters
-            if slime.alive
+            monster
+            for monster in stage.monsters
+            if monster.alive
         ]
 
         if not player.alive:
             break
 
         stage.resolve_clear(player)
-
         remaining_time -= step
 
 
@@ -111,14 +154,23 @@ def advance_stage(stage, player):
     if stage.number == 1:
         from stage2 import DeepForestStage
         next_stage = DeepForestStage()
+
     elif stage.number == 2:
         from stage3 import CaveStage
         next_stage = CaveStage()
+
     else:
-        raise ValueError("마지막 스테이지 이후의 지역은 없습니다.")
+        raise ValueError(
+            "마지막 스테이지 이후의 지역은 없습니다."
+        )
+
+    # 레벨·능력치·소지품을 유지하고
+    # 이전 맵의 공격과 이동 상태를 정리한다.
     player.enter_stage(next_stage)
+
     camera = Camera(next_stage.width)
     camera.update(player.x, 0, snap=True)
+
     return next_stage, camera
 
 
@@ -126,7 +178,13 @@ def draw_game_over(normal_font, title_font):
     center_x = SCREEN_WIDTH / 2
     center_y = SCREEN_HEIGHT / 2
 
-    panel(center_x - 240, center_y - 105, center_x + 240, center_y + 105, dark=True)
+    panel(
+        center_x - 240,
+        center_y - 105,
+        center_x + 240,
+        center_y + 105,
+        dark=True
+    )
 
     title_font.draw(
         center_x - 90,
@@ -150,27 +208,52 @@ def draw_game_over(normal_font, title_font):
     )
 
 
-def draw(stage, player, camera, minimap, normal_font, title_font):
+def draw(
+    stage,
+    player,
+    camera,
+    minimap,
+    normal_font,
+    title_font
+):
     clear_canvas()
 
     stage.draw(camera)
     player.draw(camera.x)
     player.skills.draw(camera.x)
+
     draw_level_effect(player, camera.x)
-    player.inventory.draw_feedback(camera.x, normal_font)
+    player.inventory.draw_feedback(
+        camera.x,
+        normal_font
+    )
 
     # 몬스터 체력바.
-    for slime in stage.monsters:
-        if camera.visible(slime.x - slime.width, slime.x + slime.width):
-            slime.draw_health_bar(camera.x)
+    for monster in stage.monsters:
+        if camera.visible(
+            monster.x - monster.width,
+            monster.x + monster.width
+        ):
+            monster.draw_health_bar(camera.x)
 
     draw_player_status(player, stage, normal_font)
     draw_skill_bar(player, normal_font)
     draw_messages(player, normal_font)
     draw_stage_header(stage, player, normal_font)
-    minimap.draw(stage, player, camera, normal_font)
 
-    stage.draw_status(player, normal_font, title_font)
+    minimap.draw(
+        stage,
+        player,
+        camera,
+        normal_font
+    )
+
+    stage.draw_status(
+        player,
+        normal_font,
+        title_font
+    )
+
     draw_skill_window(player, normal_font)
     player.inventory.draw(normal_font)
 
@@ -188,10 +271,11 @@ def main():
 
         stage = Stage()
         player = Player(stage)
+
         camera = Camera(stage.width)
         camera.update(player.x, 0.0, snap=True)
-        minimap = Minimap()
 
+        minimap = Minimap()
         previous_time = get_time()
 
         while True:
@@ -213,24 +297,50 @@ def main():
                 # 맵과 몬스터, 플레이어를 새로 생성한다.
                 stage = Stage()
                 player = Player(stage)
-                camera = Camera(stage.width)
-                camera.update(player.x, 0.0, snap=True)
 
-                # 재시작 로딩 시간을 게임 시간에 포함하지 않는다.
+                camera = Camera(stage.width)
+                camera.update(
+                    player.x,
+                    0.0,
+                    snap=True
+                )
+
+                # 로딩 시간을 게임 시간에 포함하지 않는다.
                 previous_time = get_time()
                 frame_time = 0.0
 
-            if stage.next_stage_requested and player.alive:
-                stage, camera = advance_stage(stage, player)
+            # 정상 포탈 이동과 F6 이동을 같은 함수로 처리한다.
+            # 두 조건이 동시에 성립해도 한 번만 이동한다.
+            if (
+                player.alive
+                and stage.number < 3
+                and (
+                    action == "skip_stage"
+                    or stage.next_stage_requested
+                )
+            ):
+                stage, camera = advance_stage(
+                    stage,
+                    player
+                )
+
                 previous_time = get_time()
                 frame_time = 0.0
 
             update(stage, player, frame_time)
+
             if player.alive:
-                if stage.number == 3 and stage.arena_started:
+                if (
+                    stage.number == 3
+                    and stage.arena_started
+                ):
                     camera.x = stage.arena_left
+
                 else:
-                    camera.update(player.x, frame_time)
+                    camera.update(
+                        player.x,
+                        frame_time
+                    )
 
             draw(
                 stage,
