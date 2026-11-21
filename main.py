@@ -358,4 +358,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from village_main import main as start_village_game
+    start_village_game()
