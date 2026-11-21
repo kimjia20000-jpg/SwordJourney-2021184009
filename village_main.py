@@ -33,16 +33,17 @@ from settings import SCREEN_WIDTH, SCREEN_HEIGHT, GROUND_Y
 from stage import Stage, Platform, IMAGE_DIR
 from stage2 import DeepForestStage
 from stage3 import CaveStage
-from ui_theme import panel, rect, text, GOLD, WHITE
+from ui_theme import panel, text, GOLD, WHITE
 
 
-# 테스트할 때만 True로 바꾸면 F6으로 현재 지역을 건너뛸 수 있다.
+# True로 바꾸면 테스트할 때 F6으로 지역을 건너뛸 수 있다.
 DEBUG_STAGE_SKIP = False
 
 VILLAGE_IMAGE_PATH = IMAGE_DIR / "village_sprites.png"
+ATLAS_WIDTH = 1254
+ATLAS_HEIGHT = 1254
 
-# 원본 이미지 크기는 1254 × 1254.
-# 각 영역은 pico2d의 왼쪽 아래 기준 (x, y, 너비, 높이).
+# pico2d 왼쪽 아래 기준 (x, y, 너비, 높이)
 VILLAGE_SPRITES = {
     "red_house": (55, 676, 519, 499),
     "green_house": (676, 675, 529, 508),
@@ -50,7 +51,8 @@ VILLAGE_SPRITES = {
     "elder": (725, 36, 398, 551),
 }
 
-# 이미지 이름, 마을 안의 가로 위치, 게임 화면에 그릴 높이
+# (스프라이트 이름, 월드 안의 x 위치, 화면에 그릴 높이)
+# 실제 마을과 미니맵이 같은 배치 정보를 사용한다.
 HOUSES = (
     ("red_house", 190, 216),
     ("green_house", 477, 204),
@@ -95,24 +97,28 @@ COMBAT_STAGES = {
 
 
 class Village(Stage):
-    """게임 시작 및 전투 지역 사이에 방문하는 새싹 마을."""
+    """처음 모험을 시작하고 전투 의뢰를 받는 새싹 마을."""
 
     def __init__(self, quest_number=1):
-        # 원본 Stage 생성자는 슬라임까지 생성하므로
-        # 마을에 필요한 지형, 이미지, 포탈만 준비한다.
+        # Stage.__init__()는 전투용 발판과 슬라임도 생성한다.
+        # 마을에서는 바닥, 집, 촌장, 포탈만 준비한다.
         self.number = 0
         self.quest_number = quest_number
         self.quest = QUESTS[quest_number]
+
         self.accepted = False
         self.next_stage_requested = False
 
         self.width = SCREEN_WIDTH
         self.height = SCREEN_HEIGHT
-        self.elder_x = 648
 
-        # 처음에는 왼쪽 집 앞, 귀환할 때는 촌장 옆에서 시작.
+        self.elder_x = 648
         self.spawn_x = 210 if quest_number == 1 else self.elder_x - 74
         self.spawn_y = GROUND_Y
+
+        # minimap.py에서 실제 집 위치와 스프라이트 비율을 읽는다.
+        self.village_houses = HOUSES
+        self.village_sprites = VILLAGE_SPRITES
 
         self.platforms = [
             Platform(0, self.width, GROUND_Y, GROUND_Y)
@@ -129,7 +135,7 @@ class Village(Stage):
         if not VILLAGE_IMAGE_PATH.is_file():
             raise FileNotFoundError(
                 "마을 이미지 파일을 찾지 못했습니다.\n"
-                f"이미지를 다음 위치에 저장해 주세요:\n{VILLAGE_IMAGE_PATH}"
+                f"다음 위치에 이미지를 저장해 주세요.\n{VILLAGE_IMAGE_PATH}"
             )
 
         self.sprite_sheet = load_image(str(VILLAGE_IMAGE_PATH))
@@ -166,18 +172,17 @@ class Village(Stage):
             )
 
     def resolve_clear(self, player):
-        # 몬스터가 없는 마을에 전투 지역 클리어 처리를 적용하지 않는다.
+        # 몬스터가 0마리여도 마을에서는 스테이지 클리어가 발생하지 않는다.
         return False
 
     def update(self, dt, player=None):
         self.portal.update(dt)
 
-    def draw_sprite(self, sprite_name, screen_x, ground_y, display_height):
-        left, bottom, width, height = VILLAGE_SPRITES[sprite_name]
+    def draw_sprite(self, sprite_name, screen_x, display_height):
+        left, bottom, width, height = self.village_sprites[sprite_name]
 
-        # 같은 이미지를 다른 해상도로 저장한 경우에도 영역을 맞춘다.
-        scale_x = self.sprite_sheet.w / 1254
-        scale_y = self.sprite_sheet.h / 1254
+        scale_x = self.sprite_sheet.w / ATLAS_WIDTH
+        scale_y = self.sprite_sheet.h / ATLAS_HEIGHT
 
         source_left = round(left * scale_x)
         source_bottom = round(bottom * scale_y)
@@ -192,7 +197,7 @@ class Village(Stage):
             source_right - source_left,
             source_top - source_bottom,
             round(screen_x),
-            round(ground_y + display_height / 2),
+            round(GROUND_Y + display_height / 2),
             display_width,
             display_height,
         )
@@ -200,28 +205,16 @@ class Village(Stage):
     def draw(self, camera):
         self.draw_background(camera)
 
-        for sprite_name, world_x, height in HOUSES:
-            self.draw_sprite(
-                sprite_name,
-                world_x - camera.x,
-                GROUND_Y,
-                height,
-            )
+        for sprite_name, world_x, height in self.village_houses:
+            self.draw_sprite(sprite_name, world_x - camera.x, height)
 
         self.platforms[0].draw(self.platform_image, camera)
 
-        # 주인공 높이 96에 맞춰 촌장의 표시 높이는 92로 설정.
-        self.draw_sprite(
-            "elder",
-            self.elder_x - camera.x,
-            GROUND_Y,
-            92,
-        )
-
+        # 주인공 높이 96에 맞춰 촌장은 92로 표시한다.
+        self.draw_sprite("elder", self.elder_x - camera.x, 92)
         self.portal.draw(camera)
 
     def draw_village_ui(self, player, camera, font):
-        # 상단 의뢰 안내
         panel(452, 645, 828, 704, dark=True)
         text(font, 470, 682, "새싹 마을", GOLD)
         text(font, 565, 682, self.quest["title"], WHITE)
@@ -233,34 +226,14 @@ class Village(Stage):
 
         text(font, 470, 658, objective, WHITE)
 
-        # 촌장 이름과 의뢰 표시
         npc_x = self.elder_x - camera.x
         text(font, npc_x - 35, GROUND_Y + 108, "마을 촌장", WHITE)
 
         if not self.accepted:
             text(font, npc_x - 3, GROUND_Y + 132, "!", GOLD)
 
-        # 촌장 근처에서는 대화창을 열고, 멀어지면 자동으로 닫는다.
         if self.near_elder(player):
-            panel(296, 224, 984, 350, dark=True)
-            text(font, 320, 324, "마을 촌장", GOLD)
-
-            if self.accepted:
-                text(
-                    font, 320, 289,
-                    "준비가 되면 오른쪽 포탈로 가 보렴.",
-                    WHITE,
-                )
-                text(
-                    font, 320, 252,
-                    "목적지 · " + self.quest["destination"],
-                    GOLD,
-                )
-            else:
-                first_line, second_line = self.quest["lines"]
-                text(font, 320, 295, first_line, WHITE)
-                text(font, 320, 270, second_line, WHITE)
-                text(font, 320, 244, "[E] 의뢰 수락", GOLD)
+            self.draw_dialogue(font)
 
         elif self.portal.nearby(player):
             panel(385, 208, 895, 254, dark=True)
@@ -272,41 +245,30 @@ class Village(Stage):
 
             text(font, 408, 232, message, WHITE)
 
+    def draw_dialogue(self, font):
+        panel(296, 224, 984, 350, dark=True)
+        text(font, 320, 324, "마을 촌장", GOLD)
 
-def draw_village_map(stage, player, font):
-    left = SCREEN_WIDTH - 300
-    right = SCREEN_WIDTH - 16
-    bottom = SCREEN_HEIGHT - 140
-    top = SCREEN_HEIGHT - 16
+        if self.accepted:
+            text(
+                font, 320, 289,
+                "준비가 되면 오른쪽 포탈로 가 보렴.",
+                WHITE,
+            )
+            text(
+                font, 320, 252,
+                "목적지 · " + self.quest["destination"],
+                GOLD,
+            )
+            return
 
-    panel(left, bottom, right, top)
-    text(font, left + 18, top - 23, "새싹 마을 · 지도", (47, 54, 72))
-
-    line_left = left + 22
-    line_right = right - 22
-    line_y = bottom + 47
-    rect(line_left, line_y, line_right, line_y + 3, (138, 115, 86))
-
-    exit_color = (79, 177, 204) if stage.accepted else (145, 145, 145)
-
-    markers = (
-        (stage.elder_x, GOLD),
-        (stage.portal.x, exit_color),
-        (player.x, (62, 173, 92)),
-    )
-
-    for world_x, color in markers:
-        x = line_left + world_x / stage.width * (line_right - line_left)
-        rect(x - 4, line_y - 3, x + 4, line_y + 7, color)
-
-    text(
-        font, left + 16, bottom + 18,
-        "초록 · 나     금색 · 촌장     오른쪽 · 출구",
-        (75, 75, 83),
-    )
+        first_line, second_line = self.quest["lines"]
+        text(font, 320, 295, first_line, WHITE)
+        text(font, 320, 270, second_line, WHITE)
+        text(font, 320, 244, "[E] 의뢰 수락", GOLD)
 
 
-def draw_village_frame(stage, player, camera, normal_font):
+def draw_village_frame(stage, player, camera, minimap, normal_font):
     clear_canvas()
 
     stage.draw(camera)
@@ -319,7 +281,10 @@ def draw_village_frame(stage, player, camera, normal_font):
     draw_player_status(player, stage, normal_font)
     draw_skill_bar(player, normal_font)
     stage.draw_village_ui(player, camera, normal_font)
-    draw_village_map(stage, player, normal_font)
+
+    # 마을과 전투 지역이 같은 Minimap 객체를 사용한다.
+    minimap.draw(stage, player, camera, normal_font)
+
     draw_messages(player, normal_font)
     draw_skill_window(player, normal_font)
     player.inventory.draw(normal_font)
@@ -352,7 +317,7 @@ def change_area(stage, player):
     else:
         raise ValueError("골렘 동굴은 마지막 지역입니다.")
 
-    # 같은 Player를 이동시켜 레벨, 장비, 포션을 이어 간다.
+    # 기존 Player를 이동시켜 장비, 레벨, 포션을 이어 간다.
     player.enter_stage(next_stage)
     player.show_notice(message)
 
@@ -441,7 +406,13 @@ def main():
                     camera.update(player.x, frame_time)
 
             if stage.number == 0:
-                draw_village_frame(stage, player, camera, normal_font)
+                draw_village_frame(
+                    stage,
+                    player,
+                    camera,
+                    minimap,
+                    normal_font,
+                )
             else:
                 original_game.draw(
                     stage,
